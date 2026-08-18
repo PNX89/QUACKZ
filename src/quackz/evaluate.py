@@ -413,8 +413,8 @@ def evaluate(
     search touched; it is a DECLARATION, and a search that is not disclosed cannot be
     deflated. `trial_sharpes` (ANNUALIZED, one per configuration) or `var_trial_sharpes`
     (ANNUALIZED variance of them) supplies the dispersion the deflation needs. With neither,
-    the iid-normal fallback is used and the result carries a warning saying it understates
-    the deflation.
+    the iid-normal fallback is used and the result carries a warning saying the number rests
+    on a guess about the shape of the search rather than on the search.
 
     `claimed_returns` is an optional per-period return stream from the caller's own backtest,
     reconciled against the NET stream recomputed here. If the claimed stream is gross of
@@ -423,9 +423,9 @@ def evaluate(
     dropped.
 
     `thresholds` overrides any grading cut-off, as a `quackz.checks.Thresholds` or a mapping
-    of field names to values. `bootstrap_resamples` is the only tuning knob the CLI exposes;
-    the remaining shapes (cost grid, block lengths, window count) are module constants with
-    their reasoning beside them.
+    of field names to values. Of the shapes the report is built from, only
+    `bootstrap_resamples` is reachable from the command line; the cost grid, the block
+    lengths and the window count are module constants with their reasoning beside them.
 
     What passing does not establish. Every check reads the positions as given, so a signal
     built with information that was not available at the decision time will pass all of them.
