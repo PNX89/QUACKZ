@@ -111,7 +111,7 @@ def test_fail_on_warn_turns_a_warning_into_a_failure(honest_csv, honest_strategy
 def test_a_missing_file_exits_two(tmp_path):
     result = run("report", str(tmp_path / "nowhere.csv"))
     assert result.returncode == 2
-    assert result.stderr.strip().startswith("error: no such file")
+    assert result.stderr.strip().startswith("error: no such CSV file")
     assert "Traceback" not in result.stderr
 
 
@@ -330,7 +330,7 @@ def test_an_unusable_trial_sharpes_file_names_the_problem(tmp_path, searched_csv
 def test_a_missing_trial_sharpes_file_exits_two(tmp_path, searched_csv):
     result = run("report", searched_csv, *FAST, "--trial-sharpes", str(tmp_path / "gone.txt"))
     assert result.returncode == 2
-    assert "no such file" in result.stderr
+    assert "no such trial Sharpes file" in result.stderr
 
 
 def test_a_trial_sharpes_file_that_is_not_decodable_text_exits_two(tmp_path, searched_csv):

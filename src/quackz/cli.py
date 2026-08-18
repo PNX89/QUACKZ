@@ -155,8 +155,10 @@ def _check_readable(path: Path, *, what: str) -> None:
         directory = path.is_dir()
     except OSError as exc:
         raise CliError(f"could not read the {what} {path}: {exc}") from exc
+    # Named, because two flags on this command take a path and "no such file" beside a
+    # typo does not say which of them was misspelled.
     if missing:
-        raise CliError(f"no such file: {path}")
+        raise CliError(f"no such {what}: {path}")
     if directory:
         raise CliError(f"{path} is a directory, not a {what}")
 
