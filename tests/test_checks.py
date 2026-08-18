@@ -281,6 +281,21 @@ def test_the_decay_rule_does_not_fire_on_forty_strategies_with_nothing_to_lose()
     assert verdicts.count(Verdict.PASS) >= 38
 
 
+def test_a_return_stream_with_no_dispersion_fails_on_the_level_without_a_nan():
+    """An infinite Sharpe over an infinite Sharpe is a NaN, and a NaN in a report is a lie."""
+    n = 300
+    # Powers of two, so every bar return is exactly 1.0 and the dispersion is exactly zero
+    # rather than rounding dust.
+    prices = pd.Series(2.0 ** np.arange(n), index=index_for(n), name="close")
+    positions = pd.Series(np.ones(n), index=prices.index, name="signal")
+    result = checks.latency_sensitivity(prices, positions, periods_per_year=PPY)
+
+    assert math.isinf(result.sharpe_by_lag[0])
+    assert result.retention_1bar is None
+    assert result.retention_ratio is None
+    assert result.verdict is Verdict.FAIL
+
+
 def test_the_rebalance_leak_is_caught_on_every_seed_rather_than_on_a_lucky_one():
     verdicts = [
         checks.latency_sensitivity(*slow_rebalance_leak(seed=seed), periods_per_year=PPY).verdict

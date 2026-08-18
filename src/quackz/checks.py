@@ -572,7 +572,10 @@ def _latency_from_streams(
     retention: float | None = None
     ratio: float | None = None
     decay_verdict = Verdict.PASS
-    if level > LATENCY_DECAY_MIN_SHARPE_SE * standard_error:
+    # A degenerate lag-0 Sharpe is infinite rather than large (a return stream with no
+    # dispersion at all), and dividing one infinity by another manufactures a NaN. The level
+    # rule has already failed that run; the decay rule has nothing to add to it.
+    if math.isfinite(level) and level > LATENCY_DECAY_MIN_SHARPE_SE * standard_error:
         retention = sharpe_by_lag[1] / level
         # A position that turns over faster than the rule can speak about is graded on the
         # level alone; so is one whose Sharpe is not far enough from zero to have anything
