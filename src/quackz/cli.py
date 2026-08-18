@@ -6,9 +6,13 @@ Exit codes, because this is meant to run in continuous integration.
 
     0   every check passed, or warned while --fail-on is `fail` (the default)
     1   at least one check FAILed, or WARNed while --fail-on is `warn`
-    2   the command could not be run at all: a bad flag, a missing file, a
-        column that is not in the CSV, or data that breaks a documented input
-        convention
+    2   the command could not be run at all: a bad flag, a file that is missing,
+        unreadable or not decodable text, a column that is not in the CSV, or
+        data that breaks a documented input convention
+
+Exit 1 is a statement about the strategy, so nothing that went wrong before the
+arithmetic started is allowed to reach it. Every path that touches the file system
+is funnelled into one sentence and exit 2.
 
 The text report always goes to standard output, so it can be piped. `--json` and `--md`
 are additive: they write those formats to files in addition to the text on stdout, and
@@ -112,19 +116,39 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _read_frame(path: Path) -> pd.DataFrame:
-    if not path.exists():
+def _check_readable(path: Path, *, what: str) -> None:
+    """Reject the file-shaped failures before a reader can turn one into a traceback.
+
+    `exists` and `is_dir` are themselves system calls: a permission wall on a parent
+    directory or a symlink loop raises out of the probe rather than out of the read.
+    """
+    try:
+        missing = not path.exists()
+        directory = path.is_dir()
+    except OSError as exc:
+        raise CliError(f"could not read the {what} {path}: {exc}") from exc
+    if missing:
         raise CliError(f"no such file: {path}")
-    if path.is_dir():
-        raise CliError(f"{path} is a directory, not a CSV file")
+    if directory:
+        raise CliError(f"{path} is a directory, not a {what}")
+
+
+def _read_frame(path: Path) -> pd.DataFrame:
+    _check_readable(path, what="CSV file")
     try:
         frame = pd.read_csv(path)
+    # UnicodeDecodeError is a ValueError, not an OSError, so an OSError handler alone
+    # lets a UTF-16 or binary file escape as a traceback and exit 1, which is the code
+    # this CLI documents as a FAILing verdict. Both are the same thing to a user: a file
+    # this command could not read, which is exit 2.
     except UnicodeDecodeError as exc:
         raise CliError(f"{path} is not text this reader can decode: {exc}") from exc
     except pd.errors.EmptyDataError as exc:
         raise CliError(f"{path} is empty") from exc
     except pd.errors.ParserError as exc:
         raise CliError(f"{path} is not a well formed CSV: {exc}") from exc
+    except OSError as exc:
+        raise CliError(f"could not read {path}: {exc}") from exc
     if frame.empty:
         raise CliError(f"{path} has a header but no rows")
     return frame

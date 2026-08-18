@@ -9,6 +9,7 @@ traceback out of pandas.
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import sys
@@ -17,6 +18,7 @@ import pandas as pd
 import pytest
 
 from conftest import PPY, RESAMPLES, write_csv
+from quackz import cli
 from quackz.checks import Verdict
 from quackz.cli import build_parser, exit_code
 from quackz.evaluate import evaluate
@@ -84,6 +86,54 @@ def test_a_missing_file_exits_two(tmp_path):
     result = run("report", str(tmp_path / "nowhere.csv"))
     assert result.returncode == 2
     assert result.stderr.strip().startswith("error: no such file")
+    assert "Traceback" not in result.stderr
+
+
+def test_a_directory_where_the_csv_should_be_exits_two(tmp_path):
+    result = run("report", str(tmp_path))
+    assert result.returncode == 2
+    assert "is a directory, not a CSV file" in result.stderr
+    assert "Traceback" not in result.stderr
+
+
+def test_a_file_that_is_not_decodable_text_exits_two(tmp_path):
+    """UnicodeDecodeError is a ValueError, so an OSError handler alone would miss it."""
+    path = tmp_path / "utf16.csv"
+    path.write_bytes("date,close,position\n2020-01-01,100,1\n".encode("utf-16"))
+    result = run("report", str(path))
+    assert result.returncode == 2
+    assert "not text this reader can decode" in result.stderr
+    assert "Traceback" not in result.stderr
+
+
+def test_a_file_the_reader_cannot_open_exits_two_rather_than_reporting_a_verdict(
+    monkeypatch, honest_csv, capsys
+):
+    """Exit 1 means a check FAILed. A file that could not be opened must never claim it."""
+
+    def refuse(*args, **kwargs):
+        raise PermissionError(13, "Permission denied")
+
+    monkeypatch.setattr(cli.pd, "read_csv", refuse)
+    assert cli.main(["report", honest_csv]) == 2
+    assert "could not read" in capsys.readouterr().err
+
+
+@pytest.mark.skipif(
+    not hasattr(os, "geteuid") or os.geteuid() == 0,
+    reason="root opens a mode 000 file whatever its permissions say",
+)
+def test_a_file_with_no_read_permission_exits_two(tmp_path, honest_strategy):
+    prices, positions = honest_strategy
+    path = tmp_path / "locked.csv"
+    write_csv(path, prices, positions)
+    path.chmod(0o000)
+    try:
+        result = run("report", str(path))
+    finally:
+        path.chmod(0o600)
+    assert result.returncode == 2
+    assert "could not read" in result.stderr
     assert "Traceback" not in result.stderr
 
 
