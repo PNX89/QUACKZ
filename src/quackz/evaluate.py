@@ -1,9 +1,15 @@
 """One call that runs every check and returns a single frozen result.
 
-`evaluate` is the composition layer. It builds the return streams once, so no two checks
-can disagree about what the strategy earned, and it forms the two verdicts that need
-quantities from more than one place: the deflated Sharpe, and the observed Sharpe against
-the noise floor of the declared search.
+`evaluate` is the composition layer. It validates the inputs and builds the return streams
+exactly once and hands that one object to every check, so no two checks can disagree about
+what the strategy earned, and it forms the two verdicts that need quantities from more than
+one place: the deflated Sharpe, and the observed Sharpe against the noise floor of the
+declared search.
+
+Each check in `quackz.checks` also stands alone, taking prices and positions and building
+what it needs for itself, because a check that can only run inside a report is a check
+nobody reaches for. The composed path takes the `_from_streams` form of the three that
+would otherwise rebuild: same arithmetic, one validation pass rather than four.
 
 Frequency, stated once because it is the easiest thing to get wrong. Everything crossing
 this module's boundary is ANNUALIZED: `sharpe`, `trial_sharpes`, `var_trial_sharpes`. The
@@ -583,11 +589,9 @@ def evaluate(
     evaluation_checks = EvaluationChecks(
         deflated_sharpe=deflated,
         noise_floor=noise_floor,
-        cost_sweep=checks.cost_sweep(
-            prices,
-            positions,
+        cost_sweep=checks._cost_sweep_from_streams(
+            streams,
             bps_grid=sorted({*COST_BPS_GRID, streams.costs_bps}),
-            periods_per_year=ppy,
             thresholds=cuts,
         ),
         concentration=checks.concentration(
@@ -605,19 +609,14 @@ def evaluate(
             seed=bootstrap_seed,
             thresholds=cuts,
         ),
-        subperiod_stability=checks.subperiod_stability(
-            prices,
-            positions,
+        subperiod_stability=checks._subperiod_stability_from_streams(
+            streams,
             n_splits=STABILITY_N_SPLITS,
-            periods_per_year=ppy,
-            costs_bps=streams.costs_bps,
             thresholds=cuts,
         ),
-        latency=checks.latency_sensitivity(
-            prices,
-            positions,
+        latency=checks._latency_from_streams(
+            streams,
             max_lag=LATENCY_MAX_LAG,
-            periods_per_year=ppy,
             thresholds=cuts,
         ),
         reconcile=reconciled,

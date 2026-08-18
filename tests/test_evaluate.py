@@ -21,6 +21,7 @@ import pytest
 
 from conftest import COSTS_BPS, PPY, RESAMPLES, build_honest
 from quackz import metrics
+from quackz import returns as rt
 from quackz.checks import DEFAULT_THRESHOLDS, Thresholds, Verdict
 from quackz.evaluate import DSR_TRIAL_GRID, MIN_OBSERVATIONS, Evaluation, evaluate
 from quackz.returns import QuackzInputError, net_returns
@@ -55,6 +56,36 @@ def test_peeking_strategy_is_caught_by_the_level_and_nothing_else(peeking_eval):
     assert verdicts.pop("latency") is Verdict.FAIL
     assert set(verdicts.values()) == {Verdict.PASS}
     assert peeking_eval.metrics.sharpe > 10.0
+
+
+def test_the_composed_report_validates_and_builds_its_streams_once(monkeypatch, honest_strategy):
+    """Building the streams once is a claim about a mechanism, so pin the mechanism.
+
+    Every check can stand alone, validating the inputs and building the streams it needs,
+    and three of them used to do exactly that inside `evaluate`: four validation passes
+    over the same two series, and four chances for two lines of one report to be describing
+    different numbers.
+    """
+    validated: list[str] = []
+    built = 0
+    original_validate = rt._validate_series
+    original_gross = rt._gross_from_checked
+
+    def counting_validate(series, name):
+        validated.append(name)
+        return original_validate(series, name)
+
+    def counting_gross(prices, positions):
+        nonlocal built
+        built += 1
+        return original_gross(prices, positions)
+
+    monkeypatch.setattr(rt, "_validate_series", counting_validate)
+    monkeypatch.setattr(rt, "_gross_from_checked", counting_gross)
+    quick(*honest_strategy, costs_bps=COSTS_BPS)
+
+    assert validated == ["prices", "positions"]
+    assert built == 1
 
 
 def test_searched_strategy_sits_at_the_noise_floor_of_its_own_search(searched_eval):

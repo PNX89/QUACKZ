@@ -34,10 +34,9 @@ from quackz import metrics
 from quackz.metrics import _newey_west_lags
 from quackz.returns import (
     QuackzInputError,
+    ReturnStreams,
+    _turnover_from_checked,
     build_returns,
-    resolve_periods_per_year,
-    turnover,
-    validate_inputs,
 )
 
 __all__ = [
@@ -467,10 +466,21 @@ def latency_sensitivity(
     changing its total, so charging costs would add a constant to every lag and obscure the
     timing effect this check exists to isolate.
     """
+    streams = build_returns(prices, positions, costs_bps=0.0, periods_per_year=periods_per_year)
+    return _latency_from_streams(streams, max_lag=max_lag, thresholds=thresholds)
+
+
+def _latency_from_streams(
+    streams: ReturnStreams,
+    *,
+    max_lag: int = 3,
+    thresholds: Thresholds | None = None,
+) -> LatencyResult:
+    """`latency_sensitivity` over streams already built. See there for what it measures."""
     cuts = DEFAULT_THRESHOLDS if thresholds is None else thresholds
     lag_count = _check_int(max_lag, name="max_lag", minimum=1)
-    checked_prices, checked_positions = validate_inputs(prices, positions)
-    ppy, _ = resolve_periods_per_year(checked_prices.index, periods_per_year)
+    checked_prices, checked_positions = streams.prices, streams.positions
+    ppy = streams.periods_per_year
 
     asset_returns = checked_prices.pct_change(fill_method=None).to_numpy()[1:]
     pos = checked_positions.to_numpy()
@@ -488,7 +498,9 @@ def latency_sensitivity(
 
     position_autocorr = 1.0 if _is_constant(pos) else metrics.autocorr_1(pos)
 
-    traded = float(turnover(checked_positions).sum())
+    # The full round trip from flat back to flat, whatever the streams were built with: the
+    # holding period is a property of the position path, not of a cost convention.
+    traded = float(_turnover_from_checked(checked_positions, liquidate_final=True).sum())
     exposure = float(np.abs(pos[:-1]).sum())
     holding_period = 2.0 * exposure / traded if traded > 0.0 else 0.0
 
@@ -561,6 +573,21 @@ def cost_sweep(
 
     `bps_grid` is sorted ascending before evaluation.
     """
+    streams = build_returns(prices, positions, costs_bps=0.0, periods_per_year=periods_per_year)
+    return _cost_sweep_from_streams(streams, bps_grid=bps_grid, thresholds=thresholds)
+
+
+def _cost_sweep_from_streams(
+    streams: ReturnStreams,
+    *,
+    bps_grid: Sequence[float],
+    thresholds: Thresholds | None = None,
+) -> CostSweepResult:
+    """`cost_sweep` over streams already built.
+
+    Only the gross and turnover series are read, and neither depends on the cost the
+    streams were built with, so a composed report can pass the streams it already has.
+    """
     cuts = DEFAULT_THRESHOLDS if thresholds is None else thresholds
     grid = [float(b) for b in bps_grid]
     if not grid:
@@ -572,7 +599,6 @@ def cost_sweep(
             )
     grid.sort()
 
-    streams = build_returns(prices, positions, costs_bps=0.0, periods_per_year=periods_per_year)
     gross = streams.gross.to_numpy()
     traded = streams.turnover.to_numpy()
     ppy = streams.periods_per_year
@@ -1000,15 +1026,31 @@ def subperiod_stability(
     would fail almost every honest strategy. What is reported is `dispersion_ratio`, the
     observed dispersion divided by the dispersion predicted by that standard error, and
     only a ratio meaningfully above 1 is evidence of anything.
+
+    The standard error is the iid Lo (2002) form. A Newey-West estimator sits one module
+    away in `quackz.metrics`, and under positive autocorrelation it would predict a wider
+    scatter than this one does, so the ratio reported here is biased towards WARN for a
+    strategy whose returns are serially correlated. Read it beside `autocorr_1` and the
+    Newey-West t-statistic in the same report.
     """
-    cuts = DEFAULT_THRESHOLDS if thresholds is None else thresholds
-    splits = _check_int(n_splits, name="n_splits", minimum=2)
     streams = build_returns(
         prices,
         positions,
         costs_bps=costs_bps,
         periods_per_year=periods_per_year,
     )
+    return _subperiod_stability_from_streams(streams, n_splits=n_splits, thresholds=thresholds)
+
+
+def _subperiod_stability_from_streams(
+    streams: ReturnStreams,
+    *,
+    n_splits: int,
+    thresholds: Thresholds | None = None,
+) -> SubperiodStabilityResult:
+    """`subperiod_stability` over streams already built, windowing their net series."""
+    cuts = DEFAULT_THRESHOLDS if thresholds is None else thresholds
+    splits = _check_int(n_splits, name="n_splits", minimum=2)
     arr = streams.net.to_numpy()
     ppy = streams.periods_per_year
     if arr.size < 2 * splits:

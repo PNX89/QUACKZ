@@ -239,7 +239,12 @@ def net_returns(
 
 @dataclass(frozen=True)
 class ReturnStreams:
-    """Everything downstream checks need, built once so they cannot disagree."""
+    """Everything downstream checks need, built once so they cannot disagree.
+
+    The validated `prices` and `positions` travel with the streams they produced, which is
+    what lets a composed report hand this one object to every check instead of handing each
+    of them the raw inputs to validate and rebuild for themselves.
+    """
 
     gross: pd.Series = field(repr=False)
     net: pd.Series = field(repr=False)
@@ -248,6 +253,8 @@ class ReturnStreams:
     periods_per_year_inferred: bool
     costs_bps: float
     n_obs: int
+    prices: pd.Series = field(repr=False)
+    positions: pd.Series = field(repr=False)
 
 
 def build_returns(
@@ -279,4 +286,6 @@ def build_returns(
         periods_per_year_inferred=inferred,
         costs_bps=bps,
         n_obs=len(gross),
+        prices=checked_prices,
+        positions=checked_positions,
     )
