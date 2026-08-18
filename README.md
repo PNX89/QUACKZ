@@ -239,7 +239,9 @@ the last, so the cost path is a closed round trip from flat back to flat.
 Sharpe recomputed with the best 1, 5 and 10 bars removed, and the share of gross profit
 those bars carry. A record that survives losing its ten best bars describes a process; one
 that collapses describes a few events. The same section reports the edge earned per unit of
-turnover in basis points, which is the line to hold against a broker's quote.
+turnover in basis points, on the same net stream as the rows beside it, so it is what is left
+after the cost charged. The number to hold against a broker's quote is the break-even in the
+cost section: the two differ by exactly `costs_bps`, and a test pins that.
 
 ### Resampling
 

@@ -1205,9 +1205,14 @@ def concentration(
     Pass `turnover_series` (the series from `quackz.returns.turnover`, aligned to these
     returns) to also get the total traded notional and `edge_per_turnover_bps`, which is
     `1e4 * mean(return) / mean(turnover)`: the basis points earned per unit of notional
-    turned over. Handed GROSS returns this is identical to the break-even cost from
-    `cost_sweep`, which is the single most useful line in the report, because it is the
-    number a trader can compare directly against a broker's quote.
+    turned over.
+
+    Which stream you hand it decides what that number means, and the difference is exactly
+    `costs_bps`. Handed GROSS returns it is identical to the break-even cost from
+    `cost_sweep`, the figure to compare against a broker's quote. Handed the NET stream, as
+    `quackz.evaluate` does so that the rows above describe the track record actually being
+    claimed, it is that same figure with the cost already charged taken out, and comparing
+    it against a broker's quote would charge the cost twice.
     """
     cuts = DEFAULT_THRESHOLDS if thresholds is None else thresholds
     arr = _finite_array(returns, name="returns")

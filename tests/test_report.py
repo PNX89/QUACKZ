@@ -142,6 +142,17 @@ def test_a_check_that_did_not_run_is_not_reported(honest_eval):
     assert CHECK_TITLES["reconcile"] not in text_report(honest_eval)
 
 
+def test_the_broker_comparison_points_at_the_gross_figure(honest_eval):
+    """Two bps-per-turnover figures one cost apart, so the sentence must say which is which."""
+    line = next(line for line in check_lines(honest_eval) if line.key == "concentration")
+    detail = flat(" ".join(line.details))
+    assert "measured on the net stream" in detail
+    before_the_quote = detail.split("broker's quote")[0]
+    assert before_the_quote.rindex("break-even cost above") > before_the_quote.rindex(
+        "Edge per unit of turnover"
+    )
+
+
 def test_every_finding_carries_the_rule_that_graded_it(any_eval):
     for line in check_lines(any_eval):
         assert "FAIL" in line.finding or line.key == "noise_floor"

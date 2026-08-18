@@ -60,6 +60,23 @@ def test_peeking_strategy_is_caught_by_the_level_and_nothing_else(peeking_eval):
     assert peeking_eval.checks.latency.retention_ratio is None
 
 
+def test_the_two_bps_per_turnover_figures_differ_by_the_cost_charged(honest_strategy):
+    """One report prints two basis-point figures per unit of turnover, and they differ.
+
+    The cost sweep's break-even is gross: the cost at which the edge is exactly consumed,
+    which is the figure to hold against a broker's quote. The concentration check is handed
+    the net stream, so that the rows beside it describe the track record actually being
+    claimed, and its edge per unit of turnover is the same quantity with the cost already
+    charged taken out. Pointing a reader at the second one for the broker comparison would
+    charge the cost twice.
+    """
+    prices, positions = honest_strategy
+    evaluation = quick(prices, positions, costs_bps=COSTS_BPS)
+    break_even = evaluation.checks.cost_sweep.break_even_bps
+    net_edge = evaluation.checks.concentration.edge_per_turnover_bps
+    assert net_edge == pytest.approx(break_even - COSTS_BPS, rel=1e-12)
+
+
 def test_the_composed_report_validates_and_builds_its_streams_once(monkeypatch, honest_strategy):
     """Building the streams once is a claim about a mechanism, so pin the mechanism.
 

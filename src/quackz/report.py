@@ -212,7 +212,9 @@ def _concentration(check: ConcentrationResult, cuts: Thresholds) -> tuple[str, l
     if check.edge_per_turnover_bps is not None:
         details.append(
             f"Edge per unit of turnover: {_bps(check.edge_per_turnover_bps, 2)}, on total "
-            f"turnover {_num(check.total_turnover, 1)}. This is the number to hold against "
+            f"turnover {_num(check.total_turnover, 1)}. This is measured on the net stream, "
+            "so the cost already charged has been taken out of it. The break-even cost "
+            "above is the same quantity gross of costs, and that is the one to hold against "
             "a broker's quote."
         )
     return finding, details
