@@ -30,6 +30,7 @@ import numpy as np
 
 from quackz.checks import (
     LATENCY_DECAY_MIN_HOLDING_BARS,
+    LATENCY_DECAY_MIN_SHARPE_SE,
     BootstrapResult,
     ConcentrationResult,
     CostSweepResult,
@@ -275,12 +276,20 @@ def _latency(check: LatencyResult, cuts: Thresholds) -> tuple[str, list[str]]:
         f"{_num(cuts.latency_annual_sharpe_warn)}."
     )
     if check.retention_ratio is None:
-        finding += (
-            " The decay rule does not apply here: a mean holding period of "
-            f"{_num(check.mean_holding_period, 1)} bars is below the "
-            f"{_num(LATENCY_DECAY_MIN_HOLDING_BARS, 1)} it needs, so losing the Sharpe to a "
-            "one-bar delay is the expected behaviour rather than a finding."
-        )
+        if check.retention_1bar is None:
+            reason = (
+                f"a Sharpe of {_num(check.sharpe_by_lag[0])} at zero delay is inside "
+                f"{_num(LATENCY_DECAY_MIN_SHARPE_SE, 0)} standard errors of zero "
+                f"({_num(check.sharpe_standard_error)} each), so there is no edge here whose "
+                "decay could mean anything"
+            )
+        else:
+            reason = (
+                f"a mean holding period of {_num(check.mean_holding_period, 1)} bars is below "
+                f"the {_num(LATENCY_DECAY_MIN_HOLDING_BARS, 1)} it needs, so losing the "
+                "Sharpe to a one-bar delay is the expected behaviour rather than a finding"
+            )
+        finding += f" The decay rule does not apply here: {reason}."
     else:
         finding += (
             f" One bar late it keeps {_pct(check.retention_1bar, 1)} of that Sharpe against "

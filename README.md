@@ -294,11 +294,16 @@ to survive a three-bar delay, and the honest one-bar alpha in the test suite los
 Sharpe to a one-bar delay exactly as the peeking fixture does. But a one-bar delay only
 misplaces the position on the bars where it moved, so a position held `h` bars keeps roughly
 `(h-1)/h` of an edge that is spread across its holding period. What is graded is the fraction
-of that expectation actually kept, and only above a five-bar holding period, where the
-expectation is large enough to test against. A slow-moving strategy that keeps almost none of
-its Sharpe one bar later has its whole edge in the bar after the decision, which is the bar a
-rebalance loop reads when it reads one bar too far ahead. That leak produces an unremarkable
-Sharpe of 2.8 in the fixture that pins it, so the level rule never sees it.
+of that expectation actually kept. A slow-moving strategy that keeps almost none of its Sharpe
+one bar later has its whole edge in the bar after the decision, which is the bar a rebalance
+loop reads when it reads one bar too far ahead. That leak produces an unremarkable Sharpe of
+2.8 in the fixture that pins it, so the level rule never sees it.
+
+The rule stays quiet on two kinds of run it cannot speak about: a holding period under five
+bars, where the expectation is too small to test against, and a Sharpe within two standard
+errors of zero, where there is no edge to lose and the ratio of two noisy numbers is noise.
+The second guard is not decoration. On forty slow-moving strategies with no edge in them at
+all, removing it fails six.
 
 Neither rule reaches a leak whose horizon matches the holding period: a position built from a
 twenty-bar forward return and held twenty bars loses as little to a one-bar delay as an honest

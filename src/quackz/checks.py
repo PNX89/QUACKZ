@@ -139,6 +139,14 @@ LATENCY_RETENTION_RATIO_FAIL = 0.25
 # honest case. Five bars is a strategy that still holds most of its exposure a day later.
 LATENCY_DECAY_MIN_HOLDING_BARS = 5.0
 
+# The rule divides one Sharpe by another, so it also needs a numerator that is not itself
+# noise: the ratio of two numbers that are both noise is noise, and on a strategy with no
+# edge at all it lands anywhere. Below this many standard errors above zero there is no edge
+# to lose, and the rule stays quiet. Measured against sqrt(periods_per_year / n_obs), one
+# standard error of an annualized Sharpe near zero under iid returns (Lo 2002). Sweeping
+# forty edgeless slow-moving strategies, dropping this guard fails six of them.
+LATENCY_DECAY_MIN_SHARPE_SE = 2.0
+
 # cost_sweep: a round trip in liquid cash equities costs roughly 5 to 10 bps all in
 # (spread, commission, impact). An edge whose break-even sits below that does not survive
 # contact with a broker; one that clears 20 bps has room for a worse fill than assumed.
@@ -454,6 +462,7 @@ class LatencyResult:
     sharpe_by_lag: tuple[float, ...]
     position_autocorr: float
     mean_holding_period: float
+    sharpe_standard_error: float
     retention_1bar: float | None
     expected_retention_1bar: float
     retention_ratio: float | None
@@ -492,9 +501,11 @@ def latency_sensitivity(
     holding period. `retention_ratio` is what it actually kept over that expectation, and a
     slow-moving strategy that keeps almost none of its Sharpe one bar later is one whose
     edge lives entirely in the bar after the decision, which is the bar a rebalance loop
-    reads when it reads one bar too far ahead. Below
-    `LATENCY_DECAY_MIN_HOLDING_BARS` the expectation is too small to test against and the
-    rule is not applied at all.
+    reads when it reads one bar too far ahead. The rule stays quiet on two kinds of run it
+    cannot speak about: a mean holding period below `LATENCY_DECAY_MIN_HOLDING_BARS`, where
+    the expectation is too small to test against, and a Sharpe at zero delay within
+    `LATENCY_DECAY_MIN_SHARPE_SE` standard errors of zero, where there is no edge to lose
+    and the ratio of two noisy numbers is noise.
 
     What this still cannot see: a leak whose horizon matches the holding period. A position
     built from a twenty-bar forward return and held twenty bars loses as little to a one-bar
@@ -555,14 +566,17 @@ def _latency_from_streams(
     else:
         level_verdict = Verdict.PASS
 
+    # One standard error of the annualized Sharpe at zero delay, under iid returns.
+    standard_error = math.sqrt(ppy / window)
     expected_retention = 1.0 - 1.0 / holding_period if holding_period > 1.0 else 0.0
     retention: float | None = None
     ratio: float | None = None
     decay_verdict = Verdict.PASS
-    if level > 0.0:
+    if level > LATENCY_DECAY_MIN_SHARPE_SE * standard_error:
         retention = sharpe_by_lag[1] / level
-        # A strategy with nothing to lose at lag 0, or one that turns over faster than the
-        # rule can speak about, is graded on the level alone.
+        # A position that turns over faster than the rule can speak about is graded on the
+        # level alone; so is one whose Sharpe is not far enough from zero to have anything
+        # to lose, which is the branch above.
         if holding_period >= LATENCY_DECAY_MIN_HOLDING_BARS and expected_retention > 0.0:
             ratio = retention / expected_retention
             if ratio < cuts.latency_retention_ratio_fail:
@@ -575,6 +589,7 @@ def _latency_from_streams(
         sharpe_by_lag=tuple(sharpe_by_lag),
         position_autocorr=position_autocorr,
         mean_holding_period=holding_period,
+        sharpe_standard_error=standard_error,
         retention_1bar=retention,
         expected_retention_1bar=expected_retention,
         retention_ratio=ratio,

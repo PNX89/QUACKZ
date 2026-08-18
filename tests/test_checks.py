@@ -82,6 +82,21 @@ def implausible_level(*, n: int = 1200, vol: float = 0.01, seed: int = 7):
     return prices, pd.Series(peeking, index=prices.index, name="signal")
 
 
+def edgeless_slow_positions(*, n: int = 600, vol: float = 0.01, seed: int = 0):
+    """A persistent position on a driftless market: slow moving, plausible, worth nothing.
+
+    The shape of a strategy that has to be left alone. Its Sharpe wanders around zero and
+    so does everything derived from it, including how much of that Sharpe survives a delay.
+    """
+    rng = np.random.default_rng(seed)
+    prices = prices_from_returns(vol * rng.standard_normal(n))
+    state = np.zeros(n)
+    shocks = rng.standard_normal(n)
+    for bar in range(1, n):
+        state[bar] = 0.97 * state[bar - 1] + shocks[bar]
+    return prices, pd.Series(np.sign(state), index=prices.index, name="signal")
+
+
 def slow_rebalance_leak(*, n: int = 1200, vol: float = 0.01, rebalance: int = 5, seed: int = 11):
     """A position rebalanced every `rebalance` bars from the return it is about to earn.
 
@@ -238,13 +253,41 @@ def test_the_retention_figures_are_the_arithmetic_they_claim_to_be():
 
 
 def test_the_decay_rule_stays_quiet_when_there_is_no_edge_to_lose():
-    """A non-positive Sharpe at lag 0 has no retention to measure, so the rule declines."""
+    """A Sharpe that is itself noise has no retention to measure, so the rule declines."""
     prices, positions = drifting_market(n=300, drift=-0.001)
     result = checks.latency_sensitivity(prices, positions, periods_per_year=PPY)
-    assert result.sharpe_by_lag[0] < 0.0
+    assert (
+        result.sharpe_by_lag[0] < checks.LATENCY_DECAY_MIN_SHARPE_SE * result.sharpe_standard_error
+    )
     assert result.retention_1bar is None
     assert result.retention_ratio is None
     assert result.verdict is Verdict.PASS
+
+
+def test_the_decay_rule_does_not_fire_on_forty_strategies_with_nothing_to_lose():
+    """A check that fires on noise is worse than one that fires on nothing.
+
+    Forty persistent positions on forty driftless markets. None has an edge, so none may be
+    failed for losing one, and the standard error guard is what keeps them out: drop it and
+    six of these forty come back FAIL on a ratio of two numbers that are both noise.
+    """
+    verdicts = [
+        checks.latency_sensitivity(
+            *edgeless_slow_positions(seed=500 + seed), periods_per_year=PPY
+        ).verdict
+        for seed in range(40)
+    ]
+    assert Verdict.FAIL not in verdicts
+    assert verdicts.count(Verdict.PASS) >= 38
+
+
+def test_the_rebalance_leak_is_caught_on_every_seed_rather_than_on_a_lucky_one():
+    verdicts = [
+        checks.latency_sensitivity(*slow_rebalance_leak(seed=seed), periods_per_year=PPY).verdict
+        for seed in range(20)
+    ]
+    assert Verdict.PASS not in verdicts
+    assert verdicts.count(Verdict.FAIL) >= 18
 
 
 def test_every_lag_is_measured_on_the_same_bars():
