@@ -42,6 +42,10 @@ DOCUMENTED_THRESHOLDS = {
         "concentration_profit_share_fail",
     ),
     "Execution delay level": ("latency_annual_sharpe_warn", "latency_annual_sharpe_fail"),
+    "Execution delay retention": (
+        "latency_retention_ratio_warn",
+        "latency_retention_ratio_fail",
+    ),
     "Reconciliation correlation": ("reconcile_correlation_warn", "reconcile_correlation_fail"),
     "Reconciliation wealth gap": (
         "reconcile_cumulative_gap_warn",

@@ -53,6 +53,9 @@ __all__ = [
     "DSR_WARN",
     "LATENCY_ANNUAL_SHARPE_FAIL",
     "LATENCY_ANNUAL_SHARPE_WARN",
+    "LATENCY_DECAY_MIN_HOLDING_BARS",
+    "LATENCY_RETENTION_RATIO_FAIL",
+    "LATENCY_RETENTION_RATIO_WARN",
     "NOISE_FLOOR_RATIO_FAIL",
     "NOISE_FLOOR_RATIO_WARN",
     "RECONCILE_CORRELATION_FAIL",
@@ -116,10 +119,25 @@ RECONCILE_CUMULATIVE_GAP_WARN = 0.01
 
 # latency_sensitivity: an annualized Sharpe this high sits far outside the range of
 # documented liquid-market results at any meaningful capacity, so the first hypothesis is
-# a timing or data problem rather than an edge. Fires on the LEVEL at lag 0. Decay is not
-# part of the verdict: fast decay is the normal signature of short-horizon alpha.
+# a timing or data problem rather than an edge. Fires on the LEVEL at lag 0.
 LATENCY_ANNUAL_SHARPE_FAIL = 10.0
 LATENCY_ANNUAL_SHARPE_WARN = 5.0
+
+# latency_sensitivity, decay: a one-bar delay changes the position only on the bars where
+# it moved, so a position with a mean holding period of h bars is misplaced on about 1/h of
+# them, and an edge spread across the holding period keeps roughly (h - 1)/h of its Sharpe.
+# What is graded is the fraction of that expectation actually kept. At half of it the edge
+# is concentrated near the decision; at a quarter it is not spread across the holding period
+# at all but sits in the single bar after the position changed, which is the bar a rebalance
+# loop reads when it reads one bar too far ahead.
+LATENCY_RETENTION_RATIO_WARN = 0.50
+LATENCY_RETENTION_RATIO_FAIL = 0.25
+
+# The decay rule has no power below this mean holding period, so it is not applied there. A
+# position that turns over every other bar is EXPECTED to lose everything to a one-bar
+# delay: that is what genuine short-horizon alpha looks like, and grading it would fail the
+# honest case. Five bars is a strategy that still holds most of its exposure a day later.
+LATENCY_DECAY_MIN_HOLDING_BARS = 5.0
 
 # cost_sweep: a round trip in liquid cash equities costs roughly 5 to 10 bps all in
 # (spread, commission, impact). An edge whose break-even sits below that does not survive
@@ -170,6 +188,7 @@ _THRESHOLD_LADDERS = (
     ("reconcile_correlation_warn", "reconcile_correlation_fail", "lower"),
     ("reconcile_cumulative_gap_warn", "reconcile_cumulative_gap_fail", "higher"),
     ("latency_annual_sharpe_warn", "latency_annual_sharpe_fail", "higher"),
+    ("latency_retention_ratio_warn", "latency_retention_ratio_fail", "lower"),
     ("cost_break_even_bps_warn", "cost_break_even_bps_fail", "lower"),
     ("bootstrap_p_value_warn", "bootstrap_p_value_fail", "higher"),
     ("stability_dispersion_ratio_warn", "stability_dispersion_ratio_fail", "higher"),
@@ -197,6 +216,8 @@ class Thresholds:
     reconcile_cumulative_gap_fail: float = RECONCILE_CUMULATIVE_GAP_FAIL
     latency_annual_sharpe_warn: float = LATENCY_ANNUAL_SHARPE_WARN
     latency_annual_sharpe_fail: float = LATENCY_ANNUAL_SHARPE_FAIL
+    latency_retention_ratio_warn: float = LATENCY_RETENTION_RATIO_WARN
+    latency_retention_ratio_fail: float = LATENCY_RETENTION_RATIO_FAIL
     cost_break_even_bps_warn: float = COST_BREAK_EVEN_BPS_WARN
     cost_break_even_bps_fail: float = COST_BREAK_EVEN_BPS_FAIL
     bootstrap_p_value_warn: float = BOOTSTRAP_P_VALUE_WARN
@@ -419,12 +440,23 @@ def reconcile(
 
 @dataclass(frozen=True)
 class LatencyResult:
-    """Sharpe as the position is delivered progressively later, plus the scale of the signal."""
+    """Sharpe as the position is delivered progressively later, plus the scale of the signal.
+
+    `retention_1bar` is the fraction of the undelayed Sharpe that survives a one-bar delay,
+    and `expected_retention_1bar` is what the mean holding period implies it should be.
+    `retention_ratio` is the first over the second and is the quantity the decay verdict is
+    formed from; it is None when the rule was not applied, either because the undelayed
+    Sharpe is not positive or because the position turns over too fast for the rule to say
+    anything (see `LATENCY_DECAY_MIN_HOLDING_BARS`).
+    """
 
     lags: tuple[int, ...]
     sharpe_by_lag: tuple[float, ...]
     position_autocorr: float
     mean_holding_period: float
+    retention_1bar: float | None
+    expected_retention_1bar: float
+    retention_ratio: float | None
     n_obs: int
     verdict: Verdict
 
@@ -447,15 +479,26 @@ def latency_sensitivity(
     All lags are evaluated on the SAME bars, the last `n - 1 - max_lag` of them, so the
     numbers differ only in timing and not in the sample they were measured on.
 
-    How to read it. Fast decay is the normal signature of genuine short-horizon alpha: a
-    signal with a two-bar holding period has no reason to survive a three-bar delay, and
-    losing most of the Sharpe by lag 1 is what a real intraday reversal looks like. Decay
-    is therefore NOT part of the verdict. Read `sharpe_by_lag` against `mean_holding_period`
-    and `position_autocorr`, which say how fast decay ought to be.
+    Two rules form the verdict, and the report names whichever one fired.
 
-    What the verdict fires on is the LEVEL at lag 0. An annualized Sharpe far above what
-    liquid markets have historically paid is a claim about the data or the timing before it
-    is a claim about an edge, and that is what gets flagged.
+    The LEVEL at lag 0. An annualized Sharpe far above what liquid markets have historically
+    paid is a claim about the data or the timing before it is a claim about an edge.
+
+    The DECAY from lag 0 to lag 1, measured against the holding period rather than in the
+    raw. Raw decay says nothing on its own: a two-bar signal has no reason to survive a
+    three-bar delay, and losing everything by lag 1 is what real short-horizon alpha looks
+    like. But a one-bar delay only misplaces the position on the bars where it moved, so a
+    position held h bars keeps roughly `(h - 1)/h` of an edge that is spread across its
+    holding period. `retention_ratio` is what it actually kept over that expectation, and a
+    slow-moving strategy that keeps almost none of its Sharpe one bar later is one whose
+    edge lives entirely in the bar after the decision, which is the bar a rebalance loop
+    reads when it reads one bar too far ahead. Below
+    `LATENCY_DECAY_MIN_HOLDING_BARS` the expectation is too small to test against and the
+    rule is not applied at all.
+
+    What this still cannot see: a leak whose horizon matches the holding period. A position
+    built from a twenty-bar forward return and held twenty bars loses as little to a one-bar
+    delay as an honest one does, and passes both rules.
 
     `mean_holding_period` is `2 * sum(|position|) / total turnover`, in bars: a position
     held once from flat back to flat gives the number of bars it was on. `position_autocorr`
@@ -506,19 +549,37 @@ def _latency_from_streams(
 
     level = sharpe_by_lag[0]
     if level >= cuts.latency_annual_sharpe_fail:
-        verdict = Verdict.FAIL
+        level_verdict = Verdict.FAIL
     elif level >= cuts.latency_annual_sharpe_warn:
-        verdict = Verdict.WARN
+        level_verdict = Verdict.WARN
     else:
-        verdict = Verdict.PASS
+        level_verdict = Verdict.PASS
+
+    expected_retention = 1.0 - 1.0 / holding_period if holding_period > 1.0 else 0.0
+    retention: float | None = None
+    ratio: float | None = None
+    decay_verdict = Verdict.PASS
+    if level > 0.0:
+        retention = sharpe_by_lag[1] / level
+        # A strategy with nothing to lose at lag 0, or one that turns over faster than the
+        # rule can speak about, is graded on the level alone.
+        if holding_period >= LATENCY_DECAY_MIN_HOLDING_BARS and expected_retention > 0.0:
+            ratio = retention / expected_retention
+            if ratio < cuts.latency_retention_ratio_fail:
+                decay_verdict = Verdict.FAIL
+            elif ratio < cuts.latency_retention_ratio_warn:
+                decay_verdict = Verdict.WARN
 
     return LatencyResult(
         lags=tuple(range(lag_count + 1)),
         sharpe_by_lag=tuple(sharpe_by_lag),
         position_autocorr=position_autocorr,
         mean_holding_period=holding_period,
+        retention_1bar=retention,
+        expected_retention_1bar=expected_retention,
+        retention_ratio=ratio,
         n_obs=window,
-        verdict=verdict,
+        verdict=worst_verdict(level_verdict, decay_verdict),
     )
 
 

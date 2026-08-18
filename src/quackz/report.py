@@ -29,6 +29,7 @@ from typing import Any
 import numpy as np
 
 from quackz.checks import (
+    LATENCY_DECAY_MIN_HOLDING_BARS,
     BootstrapResult,
     ConcentrationResult,
     CostSweepResult,
@@ -271,6 +272,22 @@ def _latency(check: LatencyResult, cuts: Thresholds) -> tuple[str, list[str]]:
         f"{_num(cuts.latency_annual_sharpe_fail)}, WARN at or above "
         f"{_num(cuts.latency_annual_sharpe_warn)}."
     )
+    if check.retention_ratio is None:
+        finding += (
+            " The decay rule does not apply here: a mean holding period of "
+            f"{_num(check.mean_holding_period, 1)} bars is below the "
+            f"{_num(LATENCY_DECAY_MIN_HOLDING_BARS, 1)} it needs, so losing the Sharpe to a "
+            "one-bar delay is the expected behaviour rather than a finding."
+        )
+    else:
+        finding += (
+            f" One bar late it keeps {_pct(check.retention_1bar, 1)} of that Sharpe against "
+            f"the {_pct(check.expected_retention_1bar, 1)} a "
+            f"{_num(check.mean_holding_period, 1)} bar holding period implies, ratio "
+            f"{_num(check.retention_ratio)}; FAIL below "
+            f"{_num(cuts.latency_retention_ratio_fail)}, WARN below "
+            f"{_num(cuts.latency_retention_ratio_warn)}."
+        )
     decay = ", ".join(
         f"{lag} bar{'' if lag == 1 else 's'} {_num(value)}"
         for lag, value in zip(check.lags, check.sharpe_by_lag, strict=True)
@@ -280,9 +297,13 @@ def _latency(check: LatencyResult, cuts: Thresholds) -> tuple[str, list[str]]:
         "of costs, so only the timing changes between them.",
         f"Mean holding period {_num(check.mean_holding_period, 1)} bars, position "
         f"autocorrelation {_num(check.position_autocorr, 3)}.",
-        "The verdict is the level at zero delay, not the decay. Fast decay is the normal "
-        "signature of short-horizon alpha: a two-bar holding period has no reason to "
-        "survive a three-bar delay.",
+        "A one-bar delay only misplaces the position on the bars where it moved, so a "
+        "position held h bars keeps about (h - 1) / h of an edge spread across its holding "
+        "period. Raw decay carries no verdict of its own, and never can: a two-bar signal "
+        "has no reason to survive a three-bar delay.",
+        "Neither rule sees a leak whose horizon matches the holding period. A position "
+        "built from a twenty-bar forward return and held twenty bars loses as little to a "
+        "one-bar delay as an honest one does.",
     ]
 
 

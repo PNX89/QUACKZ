@@ -82,6 +82,26 @@ def implausible_level(*, n: int = 1200, vol: float = 0.01, seed: int = 7):
     return prices, pd.Series(peeking, index=prices.index, name="signal")
 
 
+def slow_rebalance_leak(*, n: int = 1200, vol: float = 0.01, rebalance: int = 5, seed: int = 11):
+    """A position rebalanced every `rebalance` bars from the return it is about to earn.
+
+    The off-by-one a rebalance loop actually makes: the new position is chosen with the
+    close that follows the decision rather than the one at it. Between rebalances the
+    position is only held, so it turns over slowly and its autocorrelation is high, while
+    the whole edge sits in the single bar after each decision.
+
+    The level it reaches is ordinary, which is the point. This is the leak the Sharpe rule
+    was never going to see.
+    """
+    rng = np.random.default_rng(seed)
+    bar_returns = vol * rng.standard_normal(n)
+    prices = prices_from_returns(bar_returns)
+    positions = np.zeros(n)
+    for start in range(0, n - 1, rebalance):
+        positions[start : start + rebalance] = np.sign(bar_returns[start + 1])
+    return prices, pd.Series(positions, index=prices.index, name="signal")
+
+
 # --------------------------------------------------------------------------------------
 # reconcile
 # --------------------------------------------------------------------------------------
@@ -169,14 +189,62 @@ def test_an_implausible_level_fires():
 
 
 def test_the_two_fixtures_decay_alike_and_differ_only_in_level():
-    """The point of the check, pinned: decay cannot separate these two, level can."""
+    """The point of the level rule, pinned: raw decay cannot separate these two, level can."""
     honest = checks.latency_sensitivity(*honest_fast_decay(), max_lag=3, periods_per_year=PPY)
     peeking = checks.latency_sensitivity(*implausible_level(), max_lag=3, periods_per_year=PPY)
     for result in (honest, peeking):
         assert abs(result.sharpe_by_lag[1]) < 0.5 * abs(result.sharpe_by_lag[0])
+        # Both turn over every other bar, so neither is a case the decay rule speaks about.
+        assert result.mean_holding_period < checks.LATENCY_DECAY_MIN_HOLDING_BARS
+        assert result.retention_ratio is None
     assert peeking.sharpe_by_lag[0] > 8.0 * honest.sharpe_by_lag[0]
     assert honest.verdict is Verdict.PASS
     assert peeking.verdict is Verdict.FAIL
+
+
+def test_a_slow_position_that_dies_one_bar_late_fires_where_the_level_cannot():
+    """The leak the level rule was never going to catch: an ordinary Sharpe, an instant death.
+
+    The position is rebalanced every five bars from the return it is about to earn, so it
+    is held for ten bars on average and its edge is gone after one. A Sharpe of 2.8 is not
+    a number anybody blinks at.
+    """
+    prices, positions = slow_rebalance_leak()
+    result = checks.latency_sensitivity(prices, positions, max_lag=3, periods_per_year=PPY)
+
+    assert result.sharpe_by_lag[0] < checks.LATENCY_ANNUAL_SHARPE_WARN
+    assert result.mean_holding_period > checks.LATENCY_DECAY_MIN_HOLDING_BARS
+    assert result.position_autocorr > 0.5
+    assert result.retention_ratio < checks.LATENCY_RETENTION_RATIO_FAIL
+    assert result.verdict is Verdict.FAIL
+
+
+def test_a_slow_honest_strategy_keeps_what_its_holding_period_implies(honest_strategy):
+    """The other side of the same rule: a persistent signal survives the delay it should."""
+    result = checks.latency_sensitivity(*honest_strategy, max_lag=3, periods_per_year=PPY)
+    assert result.mean_holding_period > checks.LATENCY_DECAY_MIN_HOLDING_BARS
+    assert result.retention_ratio > checks.LATENCY_RETENTION_RATIO_WARN
+    assert result.verdict is Verdict.PASS
+
+
+def test_the_retention_figures_are_the_arithmetic_they_claim_to_be():
+    prices, positions = slow_rebalance_leak(rebalance=10)
+    result = checks.latency_sensitivity(prices, positions, periods_per_year=PPY)
+    assert result.expected_retention_1bar == pytest.approx(1.0 - 1.0 / result.mean_holding_period)
+    assert result.retention_1bar == pytest.approx(result.sharpe_by_lag[1] / result.sharpe_by_lag[0])
+    assert result.retention_ratio == pytest.approx(
+        result.retention_1bar / result.expected_retention_1bar
+    )
+
+
+def test_the_decay_rule_stays_quiet_when_there_is_no_edge_to_lose():
+    """A non-positive Sharpe at lag 0 has no retention to measure, so the rule declines."""
+    prices, positions = drifting_market(n=300, drift=-0.001)
+    result = checks.latency_sensitivity(prices, positions, periods_per_year=PPY)
+    assert result.sharpe_by_lag[0] < 0.0
+    assert result.retention_1bar is None
+    assert result.retention_ratio is None
+    assert result.verdict is Verdict.PASS
 
 
 def test_every_lag_is_measured_on_the_same_bars():

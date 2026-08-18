@@ -56,6 +56,8 @@ def test_peeking_strategy_is_caught_by_the_level_and_nothing_else(peeking_eval):
     assert verdicts.pop("latency") is Verdict.FAIL
     assert set(verdicts.values()) == {Verdict.PASS}
     assert peeking_eval.metrics.sharpe > 10.0
+    # It flips too fast for the decay rule to have anything to say, so the level is alone.
+    assert peeking_eval.checks.latency.retention_ratio is None
 
 
 def test_the_composed_report_validates_and_builds_its_streams_once(monkeypatch, honest_strategy):
@@ -337,6 +339,15 @@ def test_thresholds_override_reaches_the_checks(honest_strategy):
     assert strict.checks.latency.verdict is Verdict.WARN
     assert strict.meta.thresholds.latency_annual_sharpe_warn == 0.5
     assert quick(prices, positions).checks.latency.verdict is Verdict.PASS
+
+
+def test_the_decay_cut_off_is_overridable_like_every_other_one(honest_strategy):
+    """The honest fixture keeps more than its holding period implies, so only a cut-off
+    above 1 can make it warn."""
+    prices, positions = honest_strategy
+    assert quick(prices, positions).checks.latency.verdict is Verdict.PASS
+    strict = quick(prices, positions, thresholds={"latency_retention_ratio_warn": 2.0})
+    assert strict.checks.latency.verdict is Verdict.WARN
 
 
 def test_thresholds_accepts_the_dataclass_as_well_as_a_mapping(honest_strategy):

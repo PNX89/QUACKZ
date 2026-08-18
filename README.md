@@ -138,7 +138,7 @@ position by one bar itself, and an already-shifted series is charged for the del
 | Cost and slippage optimism | Prices a fill nobody can get | Cost sweep with a closed-form break-even, edge per unit of turnover |
 | Event dependence | Turns a handful of bars into an annualized rate | Profit concentration |
 | Regime dependence | Averages one good year over five flat ones | Subperiod stability, graded against sampling noise |
-| Execution timing | Assumes a fill at a price the strategy could not have reached | Execution delay, verdict on the level at zero delay |
+| Execution timing | Assumes a fill at a price the strategy could not have reached | Execution delay, on the level at zero delay and on the decay from it measured against the holding period |
 | Lookahead inside the signal | Uses information that did not exist yet | **Partly.** QUACKZ's own arithmetic is causal by construction, and reconciliation flags a claimed stream that the recomputed one does not match, but a position built from future information passes every check |
 | Survivorship and point-in-time universe | Backtests a universe chosen with hindsight | **Not covered.** This is a property of the data, not of the arithmetic, and no function that receives only prices and positions can reach it |
 
@@ -268,14 +268,30 @@ the dispersion that sampling noise alone predicts.
 ### Execution delay
 
 Sharpe with the position delivered 0 to 3 bars later than intended, all measured on the same
-bars, alongside the mean holding period and the position autocorrelation.
+bars, alongside the mean holding period and the position autocorrelation. Two rules form the
+verdict and the report names the one that fired.
 
-The verdict fires on the level at zero delay, not on the decay. Fast decay is the normal
-signature of genuine short-horizon alpha: a signal with a two-bar holding period has no
-reason to survive a three-bar delay, so grading the decay would fail the honest case and
-pass a slow-moving strategy that peeks. In the test suite a position set from the return it
-is about to earn (Sharpe 20.5) clears the deflated Sharpe, the noise floor, the bootstrap,
-the cost sweep, the concentration and the stability checks, and is caught here alone.
+The **level** at zero delay. In the test suite a position set from the return it is about to
+earn reaches a Sharpe of 20.5, clears the deflated Sharpe, the noise floor, the bootstrap,
+the cost sweep, the concentration and the stability checks, and is caught by this rule alone:
+every other check is a statistical statement about a return series, and that return series is
+statistically magnificent.
+
+The **decay** from lag 0 to lag 1, measured against the holding period. Raw decay says
+nothing on its own, which is why it carries no verdict here: a two-bar signal has no reason
+to survive a three-bar delay, and the honest one-bar alpha in the test suite loses all of its
+Sharpe to a one-bar delay exactly as the peeking fixture does. But a one-bar delay only
+misplaces the position on the bars where it moved, so a position held `h` bars keeps roughly
+`(h-1)/h` of an edge that is spread across its holding period. What is graded is the fraction
+of that expectation actually kept, and only above a five-bar holding period, where the
+expectation is large enough to test against. A slow-moving strategy that keeps almost none of
+its Sharpe one bar later has its whole edge in the bar after the decision, which is the bar a
+rebalance loop reads when it reads one bar too far ahead. That leak produces an unremarkable
+Sharpe of 2.8 in the fixture that pins it, so the level rule never sees it.
+
+Neither rule reaches a leak whose horizon matches the holding period: a position built from a
+twenty-bar forward return and held twenty bars loses as little to a one-bar delay as an honest
+one does, and passes both.
 
 ### Reconciliation
 
@@ -321,6 +337,7 @@ that reports it at the same time.
 | Subperiod dispersion ratio | at or above 1.5 | at or above 2.5 | Under a stable signal the ratio is distributed around 1; with five windows it clears 1.5 about one time in sixteen |
 | Profit concentration | above 30% | above 50% | For a normal sample of a thousand bars the top ten carry about 7%, so 30% is several times the noise baseline |
 | Execution delay level | at or above 5 | at or above 10 | An annualized Sharpe this high sits outside documented liquid-market results at any meaningful capacity |
+| Execution delay retention | below 0.5 | below 0.25 | A position held h bars keeps about (h-1)/h of an edge spread across its holding period; keeping a quarter of that means the edge sits in the one bar after the decision |
 | Reconciliation correlation | below 0.999 | below 0.99 | Two implementations of one rule that differ only in conventions still track each other above 0.999 |
 | Reconciliation wealth gap | above 1% | above 10% | Ten cents on the euro of terminal wealth is not a convention difference |
 

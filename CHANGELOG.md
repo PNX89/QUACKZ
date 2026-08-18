@@ -18,10 +18,12 @@ All notable changes to this project are documented here. The format follows
   Sharpe ratio, minimum track record length, a Newey-West t-statistic and the lag-1
   autocorrelation. Normal cdf and inverse cdf come from the standard library, so scipy is
   not a runtime dependency.
-- `quackz.checks`: reconciliation against a claimed return stream, latency sensitivity,
-  a cost sweep with a closed-form break-even, a stationary bootstrap with a null-imposed
-  p-value and a studentized interval, the noise floor of a declared search, subperiod
-  stability with a noise-aware verdict, and profit concentration.
+- `quackz.checks`: reconciliation against a claimed return stream, latency sensitivity
+  graded on the level at zero delay and on how much of that level survives one bar of
+  delay against what the holding period implies, a cost sweep with a closed-form
+  break-even, a stationary bootstrap with a null-imposed p-value and a studentized
+  interval, the noise floor of a declared search, subperiod stability with a noise-aware
+  verdict, and profit concentration.
 - `quackz.splits`: `WalkForward` and `EmbargoedKFold`, both following the scikit-learn
   splitter protocol without importing scikit-learn.
 - `quackz.evaluate.evaluate`: one call that runs every check against a single price and
