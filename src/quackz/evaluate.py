@@ -452,6 +452,17 @@ def evaluate(
     ppy = streams.periods_per_year
     root_ppy = math.sqrt(ppy)
 
+    # Said here, once, in the library's own error type. Otherwise the first estimator to
+    # divide by a dispersion of zero raises on behalf of all of them, and what reaches the
+    # caller is a sentence about skewness rather than about their position column.
+    if metrics._has_no_dispersion(net):
+        raise QuackzInputError(
+            "the net return stream is constant, so there is nothing here to measure: a "
+            "Sharpe, a skewness and a bootstrap all need dispersion. A position series "
+            "that never leaves zero earns exactly this, and so does a price series that "
+            "never moves. Individual checks in quackz.checks still accept a flat window."
+        )
+
     skew, kurt = metrics.moments(net)
     sharpe_annual = metrics.sharpe(net, periods_per_year=ppy)
     sharpe_per_period = sharpe_annual / root_ppy

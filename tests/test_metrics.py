@@ -499,7 +499,7 @@ def test_autocorr_1_recovers_a_known_ar1_coefficient():
 
 
 def test_autocorr_1_rejects_a_constant_series():
-    with pytest.raises(ValueError, match="undefined"):
+    with pytest.raises(ValueError, match="constant"):
         metrics.autocorr_1(np.full(20, 0.02))
 
 

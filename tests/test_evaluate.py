@@ -165,6 +165,23 @@ def test_the_shortest_acceptable_sample_still_evaluates():
     assert [block.block_length for block in evaluation.checks.bootstrap.blocks] == [5, 20]
 
 
+def test_a_position_that_never_trades_is_refused_in_the_library_s_own_words(honest_strategy):
+    """The error a user gets must name their position column, not a shape statistic.
+
+    A flat position earns a flat stream, and the first estimator to touch it raises on
+    behalf of all of them. Left alone that surfaces as a bare ValueError about skewness,
+    which is both the wrong error type for a documented input convention and an answer to
+    a question nobody asked.
+    """
+    prices, _ = honest_strategy
+    flat = pd.Series(np.zeros(len(prices)), index=prices.index, name="position")
+    with pytest.raises(QuackzInputError, match="net return stream is constant"):
+        quick(prices, flat)
+
+    # The individual checks still take a flat window, which is what returns.py documents.
+    assert metrics.sharpe(np.zeros(50), periods_per_year=PPY) == 0.0
+
+
 def test_n_trials_must_be_a_positive_integer(honest_strategy):
     prices, positions = honest_strategy
     with pytest.raises(QuackzInputError, match="n_trials"):

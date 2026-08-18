@@ -101,21 +101,30 @@ def _check_kurt(kurt_nonexcess: float) -> float:
     return kurt
 
 
-def _deviations(arr: np.ndarray, quantity: str) -> tuple[np.ndarray, float]:
-    """Deviations from the mean and the second central moment, rejecting a constant series.
+def _has_no_dispersion(returns: npt.ArrayLike) -> bool:
+    """True when a series is constant to within floating point precision.
 
     Exact equality against zero is not enough: `arr - arr.mean()` on a constant series
     leaves rounding dust of order 1e-19, which a division by m2**1.5 would amplify into a
     fabricated shape statistic. The test is therefore relative to the level of the data.
+    One rule, so that a caller deciding whether a series can be measured at all and the
+    estimator refusing to measure it cannot disagree.
     """
-    dev = arr - arr.mean()
-    m2 = float(np.mean(dev**2))
+    arr = np.asarray(returns, dtype=float)
+    m2 = float(np.mean((arr - arr.mean()) ** 2))
     level = float(np.mean(np.abs(arr)))
-    if m2 <= 0.0 or math.sqrt(m2) <= 1e-14 * max(level, 1e-300):
+    return m2 <= 0.0 or math.sqrt(m2) <= 1e-14 * max(level, 1e-300)
+
+
+def _deviations(arr: np.ndarray, quantity: str) -> tuple[np.ndarray, float]:
+    """Deviations from the mean and the second central moment, rejecting a constant series."""
+    if _has_no_dispersion(arr):
         raise ValueError(
-            f"returns is constant to within floating point precision, so {quantity} is undefined"
+            f"returns is constant to within floating point precision, so {quantity} cannot "
+            "be computed"
         )
-    return dev, m2
+    dev = arr - arr.mean()
+    return dev, float(np.mean(dev**2))
 
 
 def _degenerate_ratio(numerator: float) -> float:
