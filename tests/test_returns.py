@@ -190,20 +190,38 @@ def test_negative_costs_are_rejected():
 # --------------------------------------------------------------------------------------
 
 
-def test_periods_per_year_is_inferred_from_the_index():
-    index = pd.date_range("2020-01-01", "2024-12-31", freq="B")
-    span_days = (index[-1] - index[0]).days
-    assert rt.infer_periods_per_year(index) == pytest.approx(len(index) / span_days * 365.25)
+@pytest.mark.parametrize("n", [3, 50, 366, 4000])
+def test_a_calendar_daily_index_infers_the_days_in_a_year_exactly(n):
+    """One bar a day is 365.25 bars a year at any sample length, or the count is wrong."""
+    index = pd.date_range("2020-01-01", periods=n, freq="D")
+    assert rt.infer_periods_per_year(index) == pytest.approx(365.25)
 
 
-def test_inferred_business_day_frequency_lands_near_252():
+def test_the_inferred_factor_does_not_move_with_the_length_of_a_regular_index():
+    """Counting timestamps instead of intervals shows up as a short-sample upward bias.
+
+    n stamps bound n - 1 intervals, so counting the stamps multiplies the factor by
+    n / (n - 1): 33 percent too high on four daily bars and 0.4 percent too high on 251.
+    Every annualized Sharpe in the report is scaled by this number.
+    """
+    short = rt.infer_periods_per_year(pd.date_range("2020-01-01", periods=4, freq="D"))
+    long = rt.infer_periods_per_year(pd.date_range("2020-01-01", periods=4000, freq="D"))
+    assert short == pytest.approx(long)
+
+
+def test_a_business_day_index_infers_261_rather_than_the_252_of_a_trading_calendar():
+    """The gap is holidays, which pandas' B frequency does not model and the data cannot show.
+
+    This is the reason `periods_per_year` is worth supplying explicitly on daily equity
+    bars: inference answers what the index contains, not what the exchange was open for.
+    """
     index = pd.date_range("2015-01-01", "2024-12-31", freq="B")
-    assert 250.0 < rt.infer_periods_per_year(index) < 262.0
+    assert rt.infer_periods_per_year(index) == pytest.approx(260.84, abs=0.05)
 
 
-def test_inferred_monthly_frequency_lands_near_twelve():
+def test_inferred_monthly_frequency_lands_on_twelve():
     index = pd.date_range("2010-01-31", "2024-12-31", freq="ME")
-    assert 11.9 < rt.infer_periods_per_year(index) < 12.2
+    assert rt.infer_periods_per_year(index) == pytest.approx(12.0, abs=0.01)
 
 
 def test_an_explicit_annualization_factor_is_never_overridden():

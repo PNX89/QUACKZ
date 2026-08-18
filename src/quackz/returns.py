@@ -136,9 +136,17 @@ def validate_inputs(prices: object, positions: object) -> tuple[pd.Series, pd.Se
 def infer_periods_per_year(index: pd.DatetimeIndex) -> float:
     """Observations per year implied by the index itself.
 
-    `len(index) / span_in_days * 365.25`. Inferring beats mapping a frequency string to a
-    constant, because the constant is a guess about holidays and half-days that the data
-    already answers. The caller must report the value it used.
+    `(len(index) - 1) / span_in_days * 365.25`. The numerator counts INTERVALS, not
+    timestamps: n stamps bound n - 1 of them, and counting the stamps instead inflates the
+    factor by n / (n - 1), which inflates every annualized Sharpe built on it. The bias is
+    small on a long sample and large on a short one, and it is always upward, which is the
+    wrong direction for a library that exists to catch inflated Sharpes.
+
+    Inferring beats mapping a frequency string to a constant, because the constant is a
+    guess about holidays and half-days that the data already answers. Note what that means
+    for daily equity bars: a holiday-free business-day index infers about 261, not the 252
+    a trading calendar gives, so pass `periods_per_year` explicitly when the difference
+    matters. The caller must report the value it used.
     """
     if not isinstance(index, pd.DatetimeIndex):
         raise QuackzInputError(f"index must be a DatetimeIndex, got {type(index).__name__}")
@@ -150,7 +158,7 @@ def infer_periods_per_year(index: pd.DatetimeIndex) -> float:
             "cannot infer periods_per_year: the index spans less than one whole day. Pass "
             "periods_per_year explicitly for intraday data."
         )
-    return len(index) / span_days * 365.25
+    return (len(index) - 1) / span_days * 365.25
 
 
 def resolve_periods_per_year(
