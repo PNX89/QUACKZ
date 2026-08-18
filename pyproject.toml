@@ -1,0 +1,55 @@
+[project]
+name = "quackz"
+version = "0.1.0"
+description = "Audits a trading backtest for the ways backtests lie."
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Quelin Zammit" }]
+keywords = ["backtest", "overfitting", "sharpe", "quantitative-finance"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Financial and Insurance Industry",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Office/Business :: Financial :: Investment",
+    "Typing :: Typed",
+]
+dependencies = ["numpy>=1.26", "pandas>=2.0"]
+
+[project.scripts]
+quackz = "quackz.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/PNX89/QUACKZ"
+Source = "https://github.com/PNX89/QUACKZ"
+
+[build-system]
+requires = ["uv_build>=0.11.21,<0.12.0"]
+build-backend = "uv_build"
+
+# scipy is a DEV dependency only. It exists to prove that the stdlib NormalDist and the
+# method-of-moments estimators agree with a reference implementation to 1e-12.
+[dependency-groups]
+dev = ["pytest>=8.0", "ruff>=0.6", "scipy>=1.11"]
+
+[tool.ruff]
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# A RuntimeWarning is an arithmetic accident (a divide by zero, an overflow) and must fail
+# the suite. The iid-fallback UserWarning is raised on purpose by several fixtures; that it
+# is raised at all is asserted directly in test_evaluate, so it is silenced here rather than
+# repeated thirty times in the summary.
+filterwarnings = [
+    "error::RuntimeWarning",
+    "ignore:V\\[\\{SR_n\\}\\] was not supplied:UserWarning",
+]
