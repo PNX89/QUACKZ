@@ -14,6 +14,12 @@ Exit 1 is a statement about the strategy, so nothing that went wrong before the
 arithmetic started is allowed to reach it. Every path that touches the file system
 is funnelled into one sentence and exit 2.
 
+The deflated Sharpe needs the SPREAD of the search as well as its size, so
+`--trial-sharpes PATH` reads the annualized Sharpe of every configuration the
+search touched, and `--var-trial-sharpes` takes that spread already summarised.
+With neither, the report falls back to the iid-normal variance and says in its own
+text that the number it printed is an upper bound rather than an estimate.
+
 The text report always goes to standard output, so it can be piped. `--json` and `--md`
 are additive: they write those formats to files in addition to the text on stdout, and
 the note saying where they went goes to standard error to keep stdout clean.
@@ -31,6 +37,7 @@ import warnings
 from collections.abc import Sequence
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 from quackz._version import __version__
@@ -90,7 +97,28 @@ def build_parser() -> argparse.ArgumentParser:
         "--n-trials",
         type=int,
         default=1,
-        help="configurations the search touched, used to deflate the Sharpe (default: 1)",
+        help="configurations the search touched, used to deflate the Sharpe (default: 1, "
+        "or the number of Sharpes in --trial-sharpes when that is given)",
+    )
+    # Either the trial Sharpes or their variance, never both: they are two spellings of one
+    # quantity, and the library refuses both for the same reason argparse does here.
+    dispersion = report.add_mutually_exclusive_group()
+    dispersion.add_argument(
+        "--trial-sharpes",
+        type=Path,
+        default=None,
+        metavar="PATH",
+        help="file of ANNUALIZED Sharpes, one per configuration the search touched. "
+        "Without it the deflation falls back to the iid-normal variance, which is a "
+        "placeholder for a quantity only the search can report",
+    )
+    dispersion.add_argument(
+        "--var-trial-sharpes",
+        type=float,
+        default=None,
+        metavar="V",
+        help="ANNUALIZED variance of those Sharpes, for a search that reported the "
+        "dispersion but not the list",
     )
     report.add_argument(
         "--bootstrap-n",
@@ -154,6 +182,41 @@ def _read_frame(path: Path) -> pd.DataFrame:
     return frame
 
 
+def _read_trial_sharpes(path: Path) -> np.ndarray:
+    """The Sharpe of every configuration a search touched, as written by that search.
+
+    One number per line, or several separated by commas or spaces, with blank lines and
+    `#` comments skipped, because the file a search writes out is a column and the file a
+    person types is a row.
+    """
+    _check_readable(path, what="trial Sharpes file")
+    try:
+        text = path.read_text(encoding="utf-8")
+    except UnicodeDecodeError as exc:
+        raise CliError(f"--trial-sharpes {path} is not UTF-8 text: {exc}") from exc
+    except OSError as exc:
+        raise CliError(f"could not read --trial-sharpes {path}: {exc}") from exc
+
+    values: list[float] = []
+    for number, line in enumerate(text.splitlines(), start=1):
+        for token in line.split("#", 1)[0].replace(",", " ").split():
+            try:
+                values.append(float(token))
+            except ValueError as exc:
+                raise CliError(
+                    f"--trial-sharpes {path} line {number}: {token!r} is not a number. The "
+                    "file holds one ANNUALIZED Sharpe per configuration, one per line or "
+                    "separated by commas, and # starts a comment."
+                ) from exc
+    if len(values) < 2:
+        raise CliError(
+            f"--trial-sharpes {path} holds {len(values)} value(s); a dispersion needs the "
+            "Sharpe of at least two configurations. A search of one is no search at all, "
+            "which is what the default already assumes."
+        )
+    return np.asarray(values, dtype=float)
+
+
 def _column(frame: pd.DataFrame, name: str, *, flag: str) -> pd.Series:
     if name not in frame.columns:
         available = ", ".join(str(column) for column in frame.columns)
@@ -196,12 +259,31 @@ def load_evaluation(args: argparse.Namespace) -> Evaluation:
         claimed = pd.Series(
             _column(frame, args.claimed_col, flag="--claimed-col").to_numpy(), index=index
         )
+
+    trials = args.n_trials
+    trial_sharpes = None
+    if args.trial_sharpes is not None:
+        trial_sharpes = _read_trial_sharpes(args.trial_sharpes)
+        if trials == 1:
+            # A file of trial Sharpes IS the search, so one declared trial beside it can
+            # only be an omission, and the forgiving reading of an omission is the one
+            # that deflates least. Take the count from the file and say so out loud.
+            trials = int(trial_sharpes.size)
+            warnings.warn(
+                f"--n-trials was not given, so the {trials} Sharpes in "
+                f"{args.trial_sharpes} are taken as the trial count",
+                UserWarning,
+                stacklevel=2,
+            )
+
     return evaluate(
         prices,
         positions,
         costs_bps=args.costs_bps,
         periods_per_year=args.periods_per_year,
-        n_trials=args.n_trials,
+        n_trials=trials,
+        trial_sharpes=trial_sharpes,
+        var_trial_sharpes=args.var_trial_sharpes,
         claimed_returns=claimed,
         bootstrap_seed=args.seed,
         bootstrap_resamples=args.bootstrap_n,

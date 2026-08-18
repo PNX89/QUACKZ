@@ -178,6 +178,13 @@ Supply `trial_sharpes`, the Sharpe of every configuration your search touched, o
 `var_trial_sharpes`. With neither, QUACKZ falls back to the iid-normal `1/n_obs` and says so
 in the report, because that fallback understates the deflation.
 
+The command line takes the same two, so the honest number is not Python-only. `--trial-sharpes`
+reads a file of annualized Sharpes, one per configuration, written by the search itself:
+
+```bash
+uv run quackz report prices.csv --n-trials 200 --trial-sharpes trials.txt
+```
+
 One number is less useful than the curve:
 
 ```text

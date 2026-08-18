@@ -10,10 +10,12 @@ traceback out of pandas.
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
 import sys
 
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -50,6 +52,30 @@ def peeking_csv(tmp_path_factory, peeking_strategy) -> str:
     path = tmp_path_factory.mktemp("data") / "peeking.csv"
     write_csv(path, prices, positions)
     return str(path)
+
+
+@pytest.fixture(scope="session")
+def searched_csv(tmp_path_factory, searched_strategy) -> str:
+    prices, positions, _ = searched_strategy
+    path = tmp_path_factory.mktemp("data") / "searched.csv"
+    write_csv(path, prices, positions)
+    return str(path)
+
+
+@pytest.fixture(scope="session")
+def searched_trials(tmp_path_factory, searched_strategy) -> str:
+    """The Sharpe of all two hundred configurations, in the shape a search would write it."""
+    *_, sharpes = searched_strategy
+    path = tmp_path_factory.mktemp("data") / "trials.txt"
+    body = "\n".join(f"{value:.12f}" for value in sharpes)
+    path.write_text(f"# annualized Sharpe, one per configuration\n{body}\n", encoding="utf-8")
+    return str(path)
+
+
+def deflated_sharpe_of(stdout: str) -> float:
+    match = re.search(r"Deflated Sharpe (\d+\.\d+) against", stdout)
+    assert match is not None, stdout
+    return float(match.group(1))
 
 
 # --------------------------------------------------------------------------------------
@@ -217,6 +243,120 @@ def test_an_empty_file_is_refused(tmp_path):
 
 
 # --------------------------------------------------------------------------------------
+# The dispersion of the search, which is what makes the deflation honest
+# --------------------------------------------------------------------------------------
+
+
+def test_the_trial_sharpes_file_reaches_the_deflation(
+    searched_csv, searched_trials, searched_strategy
+):
+    """The headline capability, from the command line rather than only from Python.
+
+    Without the file the report deflates against the iid-normal placeholder. With it, the
+    command line lands on exactly the number the library produces from the same Sharpes.
+    """
+    prices, positions, sharpes = searched_strategy
+    direct = evaluate(
+        prices,
+        positions,
+        periods_per_year=PPY,
+        n_trials=len(sharpes),
+        trial_sharpes=sharpes,
+        bootstrap_resamples=RESAMPLES,
+    )
+    declared = ("--n-trials", str(len(sharpes)))
+    fallback = run("report", searched_csv, *FAST, *declared)
+    supplied = run("report", searched_csv, *FAST, *declared, "--trial-sharpes", searched_trials)
+
+    assert "source iid_fallback" in fallback.stdout
+    assert "source trial_sharpes" in supplied.stdout
+    assert deflated_sharpe_of(supplied.stdout) == pytest.approx(
+        direct.checks.deflated_sharpe.dsr, abs=1e-3
+    )
+    assert deflated_sharpe_of(supplied.stdout) != deflated_sharpe_of(fallback.stdout)
+
+
+def test_the_trial_count_defaults_to_the_number_of_sharpes_supplied(searched_csv, searched_trials):
+    """Declaring one trial beside a file of two hundred can only be an omission."""
+    result = run("report", searched_csv, *FAST, "--trial-sharpes", searched_trials)
+    assert result.returncode in (0, 1)
+    assert "note: --n-trials was not given" in result.stderr
+    assert "against 200 declared trials" in result.stdout
+
+
+def test_the_variance_can_be_given_directly(searched_csv):
+    result = run("report", searched_csv, *FAST, "--n-trials", "200", "--var-trial-sharpes", "1.5")
+    assert "source var_trial_sharpes" in result.stdout
+    assert "V = 1.5000 per year" in result.stdout
+
+
+def test_the_two_ways_to_state_the_dispersion_are_mutually_exclusive(searched_csv, searched_trials):
+    result = run(
+        "report",
+        searched_csv,
+        *FAST,
+        "--trial-sharpes",
+        searched_trials,
+        "--var-trial-sharpes",
+        "1.5",
+    )
+    assert result.returncode == 2
+    assert "not allowed with argument" in result.stderr
+
+
+def test_a_negative_variance_is_refused(searched_csv):
+    result = run("report", searched_csv, *FAST, "--var-trial-sharpes", "-1")
+    assert result.returncode == 2
+    assert "non-negative" in result.stderr
+
+
+@pytest.mark.parametrize(
+    ("body", "expected"),
+    [
+        ("0.4\nnot-a-number\n0.9\n", "line 2: 'not-a-number' is not a number"),
+        ("0.4\n", "holds 1 value(s)"),
+        ("# every line a comment\n\n", "holds 0 value(s)"),
+    ],
+)
+def test_an_unusable_trial_sharpes_file_names_the_problem(tmp_path, searched_csv, body, expected):
+    path = tmp_path / "trials.txt"
+    path.write_text(body, encoding="utf-8")
+    result = run("report", searched_csv, *FAST, "--trial-sharpes", str(path))
+    assert result.returncode == 2
+    assert expected in result.stderr
+    assert "Traceback" not in result.stderr
+
+
+def test_a_missing_trial_sharpes_file_exits_two(tmp_path, searched_csv):
+    result = run("report", searched_csv, *FAST, "--trial-sharpes", str(tmp_path / "gone.txt"))
+    assert result.returncode == 2
+    assert "no such file" in result.stderr
+
+
+def test_a_trial_sharpes_file_that_is_not_decodable_text_exits_two(tmp_path, searched_csv):
+    path = tmp_path / "trials.txt"
+    path.write_bytes("0.4\n0.9\n".encode("utf-16"))
+    result = run("report", searched_csv, *FAST, "--trial-sharpes", str(path))
+    assert result.returncode == 2
+    assert "is not UTF-8 text" in result.stderr
+    assert "Traceback" not in result.stderr
+
+
+def test_the_trial_sharpes_file_accepts_a_row_as_well_as_a_column(tmp_path, searched_strategy):
+    """A search writes a column; a person types a row. Both are the same file to the reader."""
+    from quackz.cli import _read_trial_sharpes
+
+    column = tmp_path / "column.txt"
+    column.write_text("1.0\n# a comment\n\n-0.5\n2.25\n", encoding="utf-8")
+    row = tmp_path / "row.txt"
+    row.write_text("1.0, -0.5, 2.25  # the same three\n", encoding="utf-8")
+
+    expected = np.array([1.0, -0.5, 2.25])
+    np.testing.assert_allclose(_read_trial_sharpes(column), expected)
+    np.testing.assert_allclose(_read_trial_sharpes(row), expected)
+
+
+# --------------------------------------------------------------------------------------
 # Additional output
 # --------------------------------------------------------------------------------------
 
@@ -285,6 +425,7 @@ def test_the_defaults_are_the_documented_ones(honest_csv):
     assert (args.costs_bps, args.n_trials, args.seed) == (0.0, 1, 0)
     assert (args.bootstrap_n, args.periods_per_year, args.fail_on) == (1000, None, "fail")
     assert (args.claimed_col, args.json, args.md) == (None, None, None)
+    assert (args.trial_sharpes, args.var_trial_sharpes) == (None, None)
 
 
 def test_the_evaluation_run_by_the_cli_matches_the_library(honest_csv, honest_strategy):

@@ -31,7 +31,10 @@ All notable changes to this project are documented here. The format follows
   set of verdict sentences so the three formats cannot disagree.
 - `quackz.cli`: `quackz report DATA.csv`, with additive `--json` and `--md` output and
   exit codes 0 for pass or warn, 1 for a failing verdict, 2 for anything the command could
-  not run at all.
+  not run at all, including a file it could not open or decode. The dispersion of the
+  search is reachable from the command line as well as from Python: `--trial-sharpes PATH`
+  reads the annualized Sharpe of every configuration the search touched, and
+  `--var-trial-sharpes` takes that spread already summarised.
 - Configurable grading: every cut-off is a named constant with its reasoning beside it,
   gathered into `Thresholds` and overridable through `evaluate(thresholds=...)`.
 - Examples: `examples/overfit_demo.py` and `examples/momentum_demo.py`, both seeded,
