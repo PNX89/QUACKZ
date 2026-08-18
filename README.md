@@ -8,8 +8,8 @@
 
 `quackz` audits a trading backtest for the ways backtests overstate themselves. Give it a
 price series and a position series; it gives back a report with a PASS, WARN or FAIL on
-each of eight checks, the arithmetic behind every verdict, and the cut-off that produced
-it.
+each of seven checks, the arithmetic behind every verdict, and the cut-off that produced
+it. An eighth runs when you also hand it the return stream your own backtest claims.
 
 ## Every backtest is biased
 
@@ -54,7 +54,9 @@ PERFORMANCE, NET OF COSTS
   Annualized return                 69.94%
   Annualized volatility             18.46%
   Total return                      69.58%
+  ... 2 rows cut here (Sortino, Calmar)
   Maximum drawdown                  -7.55%
+  ... 2 rows cut here (Ulcer index, CVaR)
   Skewness                           0.274
   Kurtosis, non-excess               2.894
   Lag-1 autocorrelation            -0.0393
@@ -83,10 +85,15 @@ CHECKS
          Prado (2014) equation 1, the same benchmark the deflated Sharpe is
          measured against.
 
-... elided: 4 more performance rows, 5 more checks (cost sensitivity, profit
-    concentration, resampling, subperiod stability, execution delay, all PASS),
-    the deflation table shown below, the cost grid and the limits section.
+... 5 more checks cut here, all PASS
 ```
+
+The three `...` lines are the only places anything was taken out: two performance rows each
+time, then cost sensitivity, profit concentration, resampling, subperiod stability and
+execution delay, which the full report prints in the same shape as the two above, followed by
+the deflation table shown further down, the cost grid and the limits section. Every other line
+is output. `tests/test_docs.py` runs the example and checks each of them against the live run,
+so this block cannot drift away from what the code prints.
 
 The data behind that report is synthetic and seeded: `numpy` generates it inside the example,
 so the run reproduces from a clean checkout, nothing touches the network, and no market data
@@ -147,7 +154,7 @@ position by one bar itself, and an already-shifted series is charged for the del
 ```mermaid
 flowchart LR
     A[prices, positions] --> B[quackz.returns<br/>one shift, one cost model]
-    B --> C[gross, net, turnover] --> D[eight checks]
+    B --> C[gross, net, turnover] --> D[seven checks<br/>eight with a claimed stream]
     D --> E[Evaluation<br/>frozen dataclass] --> F[text, markdown, JSON]
 ```
 
@@ -171,8 +178,10 @@ The deflated Sharpe (Bailey and Lopez de Prado, 2014) is that probability measur
 `SR_0`, the best Sharpe that N trials of a strategy with no edge are expected to produce,
 with `g` the Euler-Mascheroni constant and `V[{SR_n}]` the variance of the estimated Sharpes
 across those trials. Kurtosis is non-excess throughout (a normal sample gives about 3), the
-root is over `T - 1`, and every quantity is at the observation frequency. The three worked
-examples in the 2014 paper are pinned as tests to four decimal places.
+root is over `T - 1`, and every quantity is at the observation frequency. The worked example
+in the 2014 paper is pinned as a test to six decimal places, alongside two cases derived from
+the same inputs: the largest trial counts at which that record still clears 0.95, with the
+paper's non-normal moments and with normal ones.
 
 Supply `trial_sharpes`, the Sharpe of every configuration your search touched, or
 `var_trial_sharpes`. With neither, QUACKZ falls back to the iid-normal `1/n_obs` and says so
@@ -408,7 +417,12 @@ print its own limits beside its own verdicts.
   properties of the data. If your universe was chosen with hindsight, every number in the
   report describes a sample that never existed.
 - **The thresholds are judgement calls.** They are documented and adjustable, and they are
-  not laws. A PASS is the absence of evidence in these eight directions, not a certificate.
+  not laws. A PASS is the absence of evidence in the directions this report looks, not a
+  certificate.
+- **Subperiod dispersion is judged against an iid standard error.** The Lo (2002) form
+  assumes serially independent bars. Under positive autocorrelation the honest scatter is
+  wider than it predicts, so the ratio leans towards WARN. Read it beside the lag-1
+  autocorrelation and the Newey-West t-statistic in the same report.
 - **The examples are synthetic.** They exist to make the checks reproducible offline, not to
   demonstrate anything about a real market.
 
@@ -422,9 +436,15 @@ uv run python examples/overfit_demo.py     # the report above
 uv run python examples/momentum_demo.py    # an honest strategy, everything passes
 ```
 
-The suite is deterministic, offline and runs in a few seconds. CI runs lint, format and the
-suite on Python 3.11, 3.12, 3.13 and 3.14, all required legs.
+The suite is deterministic, offline and runs in a few seconds. CI runs lint and format once
+and the suite on Python 3.11, 3.12, 3.13 and 3.14. The matrix sets `fail-fast: false`, so a
+failure on one version does not cancel the others: which versions break is the information
+worth having.
 
 ## License
 
 MIT. Copyright (c) 2026 Quelin Zammit.
+
+Part of the Q...Z toolset: QUACKZ, [QUOTEZ](https://github.com/PNX89/QUOTEZ),
+[QUELLZ](https://github.com/PNX89/QUELLZ), [QUIDZ](https://github.com/PNX89/QUIDZ),
+[QUESTZ](https://github.com/PNX89/QUESTZ).

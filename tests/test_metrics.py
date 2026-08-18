@@ -46,7 +46,13 @@ PAPER_VAR = 0.5 / PAPER_PPY
     ],
 )
 def test_deflated_sharpe_reproduces_the_paper(n_trials, skew, kurt_nonexcess, expected_dsr):
-    """The spec requires 4 decimal places; these reproduce to 6.
+    """The paper's worked example, and two cases derived from the same inputs, to 6 places.
+
+    The first row is the worked example: 100 trials against a record with skew -3 and
+    non-excess kurtosis 10. The other two are DERIVED here rather than quoted, which is the
+    reason both land just above 0.95: they are the largest trial counts at which this record
+    still clears that confidence, with the paper's non-normal moments and with normal ones.
+    The test below pins the crossings that make them the largest.
 
     Passing this pins four independent choices at once: sqrt(T - 1) rather than sqrt(T),
     non-excess kurtosis, the de-annualization of both SR and V, and the e^-1 term inside
@@ -62,6 +68,29 @@ def test_deflated_sharpe_reproduces_the_paper(n_trials, skew, kurt_nonexcess, ex
     )
     assert result.dsr == pytest.approx(expected_dsr, abs=1e-6)
     assert round(result.dsr, 4) == round(expected_dsr, 4)
+
+
+@pytest.mark.parametrize(
+    ("last_clearing_count", "skew", "kurt_nonexcess"),
+    [(46, -3.0, 10.0), (88, 0.0, 3.0)],
+)
+def test_the_two_derived_rows_are_the_last_trial_counts_that_clear_the_confidence(
+    last_clearing_count, skew, kurt_nonexcess
+):
+    """What makes 46 and 88 the numbers they are, so the README can say what they are."""
+
+    def dsr_at(n_trials: int) -> float:
+        return metrics.deflated_sharpe(
+            sr=PAPER_SR,
+            n_trials=n_trials,
+            n_obs=PAPER_N_OBS,
+            skew=skew,
+            kurt_nonexcess=kurt_nonexcess,
+            var_trial_sharpes=PAPER_VAR,
+        ).dsr
+
+    assert dsr_at(last_clearing_count) >= 0.95
+    assert dsr_at(last_clearing_count + 1) < 0.95
 
 
 def test_expected_max_sharpe_reproduces_the_paper_threshold():

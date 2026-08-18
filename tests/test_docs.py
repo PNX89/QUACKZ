@@ -169,6 +169,36 @@ def test_the_override_example_uses_real_threshold_names():
 # --------------------------------------------------------------------------------------
 
 
+def readme_output_block() -> list[str]:
+    """The demo block from the README, with the shell prompt and the marked cuts removed.
+
+    A cut is one line whose text begins with `...`, which is why the README keeps them to
+    one line each. Everything else in that block claims to be output and is checked as such.
+    """
+    lines = []
+    for line in code_blocks(section("What it prints"), "text")[0].splitlines():
+        if line.lstrip().startswith("...") or line.startswith("$ ") or not line.strip():
+            continue
+        lines.append(line)
+    return lines
+
+
+def test_every_line_of_the_readme_block_is_real_output(capsys):
+    """The block says it is a real run, so every line of it has to come out of one.
+
+    This is the claim the rest of the README rests on. A number nudged by hand, a row
+    dropped without a marker, or a verdict count left behind by a threshold change all fail
+    here rather than in front of a reader.
+    """
+    load_example("overfit_demo").main()
+    printed = capsys.readouterr().out.splitlines()
+
+    quoted = readme_output_block()
+    assert len(quoted) > 30, "the README block no longer quotes the demo"
+    for line in quoted:
+        assert line in printed, line
+
+
 def test_the_overfit_demo_fails_on_selection_and_nothing_else(capsys):
     load_example("overfit_demo").main()
     printed = capsys.readouterr().out
