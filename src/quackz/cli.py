@@ -18,7 +18,7 @@ The deflated Sharpe needs the SPREAD of the search as well as its size, so
 `--trial-sharpes PATH` reads the annualized Sharpe of every configuration the
 search touched, and `--var-trial-sharpes` takes that spread already summarised.
 With neither, the report falls back to the iid-normal variance and says in its own
-text that the number it printed is an upper bound rather than an estimate.
+text that the number it printed rests on a guess about the shape of the search.
 
 The text report always goes to standard output, so it can be piped. `--json` and `--md`
 are additive: they write those formats to files in addition to the text on stdout, and

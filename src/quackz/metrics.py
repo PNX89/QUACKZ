@@ -346,9 +346,11 @@ class DSRResult:
 _IID_FALLBACK_WARNING = (
     "V[{SR_n}] was not supplied, so the iid-normal approximation 1/n_obs was used. That "
     "approximation assumes every trial had the same volatility and that the trials were "
-    "independent; real strategy searches breach both, their Sharpe estimates are more "
-    "dispersed, and the true deflation is therefore larger. Treat this DSR as an upper "
-    "bound and pass trial_sharpes from the actual search."
+    "independent, and a real search breaches both in a direction only the search itself "
+    "knows: configurations that differ genuinely scatter wider than 1/n_obs, so the true "
+    "deflation is larger than this one, while a fine grid over a single strategy scatters "
+    "narrower, so it is smaller. This DSR is a placeholder, not a bound in either "
+    "direction. Pass trial_sharpes from the actual search."
 )
 
 
@@ -376,7 +378,10 @@ def deflated_sharpe(
     either as `trial_sharpes` (the Sharpe of every configuration the search touched, from
     which the sample variance is taken) or as `var_trial_sharpes` (that variance already
     computed), never both. If neither is given the iid-normal 1/n_obs is used and the
-    result carries a warning, because that fallback understates the deflation.
+    result carries a warning, because that fallback is a guess at a quantity only the
+    search can report, and its error runs in either direction: a search over genuinely
+    different configurations scatters wider than 1/n_obs and is deflated too little by it,
+    a fine grid over one strategy scatters narrower and is deflated too much.
     """
     if trial_sharpes is not None and var_trial_sharpes is not None:
         raise ValueError(

@@ -226,6 +226,29 @@ def test_supplied_dispersion_does_not_warn(searched_eval):
     assert searched_eval.checks.noise_floor.note is None
 
 
+def test_the_iid_fallback_is_a_placeholder_rather_than_a_bound(searched_strategy):
+    """The fallback's error has no fixed sign, so nothing in the report may call it a bound.
+
+    The two hundred configurations of this search are near-copies of one rule, so their
+    Sharpes scatter by less than the iid-normal 1 / n_obs and the fallback deflates HARDER
+    than the truth. A search over genuinely different rules scatters wider, and the same
+    fallback then deflates too little. Both are real searches.
+    """
+    prices, positions, sharpes = searched_strategy
+    declared = len(sharpes)
+    guessed = quick(prices, positions, n_trials=declared).checks.deflated_sharpe
+    narrow = quick(
+        prices, positions, n_trials=declared, trial_sharpes=sharpes
+    ).checks.deflated_sharpe
+    wide = quick(
+        prices, positions, n_trials=declared, trial_sharpes=np.linspace(-3.0, 3.0, declared)
+    ).checks.deflated_sharpe
+
+    assert guessed.variance_source == "iid_fallback"
+    assert narrow.var_trial_sharpes < guessed.var_trial_sharpes < wide.var_trial_sharpes
+    assert narrow.dsr > guessed.dsr > wide.dsr
+
+
 # --------------------------------------------------------------------------------------
 # The deflation table
 # --------------------------------------------------------------------------------------

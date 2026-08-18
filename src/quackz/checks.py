@@ -882,10 +882,11 @@ def bootstrap(
 # --------------------------------------------------------------------------------------
 
 _NOISE_FLOOR_IID_NOTE = (
-    "V[{SR_n}] was not supplied, so the iid-normal null variance 1/n_obs was used. Real "
-    "strategy searches produce Sharpe estimates more dispersed than that, which raises the "
-    "floor, so this is the most forgiving version of the number. Pass the Sharpe of every "
-    "configuration the search touched to get the honest one."
+    "V[{SR_n}] was not supplied, so the iid-normal null variance 1/n_obs was used. Where "
+    "the configurations differed genuinely their Sharpes scatter wider than that and the "
+    "true floor is higher; where the search was a fine grid over one strategy they scatter "
+    "narrower and it is lower. Pass the Sharpe of every configuration the search touched "
+    "to replace the guess with the measurement."
 )
 
 

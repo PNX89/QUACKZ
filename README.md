@@ -176,7 +176,11 @@ examples in the 2014 paper are pinned as tests to four decimal places.
 
 Supply `trial_sharpes`, the Sharpe of every configuration your search touched, or
 `var_trial_sharpes`. With neither, QUACKZ falls back to the iid-normal `1/n_obs` and says so
-in the report, because that fallback understates the deflation.
+in the report, because that fallback is a guess and not a bound: the demo's two hundred
+smoothed random signals scatter at `V = 1.49` a year against a fallback of `1.00`, so the
+fallback deflates too little, while the 600-bar search in the test suite is 200 near-copies
+of one rule whose Sharpes scatter at less than half the fallback, which deflates too much.
+A test pins both directions.
 
 The command line takes the same two, so the honest number is not Python-only. `--trial-sharpes`
 reads a file of annualized Sharpes, one per configuration, written by the search itself:

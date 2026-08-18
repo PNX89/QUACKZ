@@ -197,7 +197,7 @@ def test_the_limits_are_printed_in_full(any_eval):
 def test_the_fallback_warning_reaches_the_reader(fallback_eval):
     text = flat(text_report(fallback_eval))
     assert "iid-normal" in text
-    assert "upper bound" in text
+    assert "placeholder, not a bound" in text
 
 
 # --------------------------------------------------------------------------------------

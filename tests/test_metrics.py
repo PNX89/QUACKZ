@@ -230,7 +230,7 @@ def test_deflated_sharpe_warns_loudly_when_it_has_to_guess_the_variance():
         )
     assert result.variance_source == "iid_fallback"
     assert result.warning is not None
-    assert "upper bound" in result.warning
+    assert "placeholder, not a bound" in result.warning
     assert result.var_trial_sharpes == pytest.approx(1.0 / PAPER_N_OBS)
 
 
