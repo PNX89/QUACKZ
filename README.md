@@ -473,4 +473,9 @@ Part of the Q...Z toolset, all of it designing for the failure that does not ann
 - [QUESTZ](https://github.com/PNX89/QUESTZ), stopping a scraper before it writes a CSV from a
   page that changed shape.
 
+**On QUELLZ.** QUELLZ measures an attack success rate against a fixture built to obey, so its
+baseline is 1.00 on every case and carries no information. That is this repository's subject
+arriving from the other direction: a number is only as good as what it was selected from,
+whether the selection is two hundred random signals or one agent that always says yes.
+
 <!-- toolset:end -->
