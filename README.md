@@ -11,9 +11,9 @@ the best one picked, and then failed](docs/demo.svg)
 
 Two hundred random signals over prices with no drift in them at all. The best scores a Sharpe
 of 3.06, which is the number a search hands you and the number that gets presented. The audit
-fails it. That frame is built from `docs/evidence/demo.txt`, the captured output of a real run,
-asserted against a live one by the test suite; the playback cadence is chosen, none of the text
-is. The whole report is at [pnx89.github.io/QUACKZ](https://pnx89.github.io/QUACKZ/).
+fails it. The timing of that frame is mine and every figure in it is the search's: a test
+re-runs the audit and compares the output line for line before this file is allowed to ship.
+Full report at [pnx89.github.io/QUACKZ](https://pnx89.github.io/QUACKZ/).
 
 `quackz` audits a trading backtest for the ways backtests overstate themselves. Give it a
 price series and a position series; it gives back a report with a PASS, WARN or FAIL on
