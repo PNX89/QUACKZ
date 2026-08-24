@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>QUACKZ</title>
+<meta name="description" content="deflating a backtest that only looks good because it was picked out of two hundred">
+<style>
+  /* Light is defined on bare :root so a viewer with no preference gets a complete palette,
+     and only the tokens that differ are redefined for dark. */
+  :root {
+    color-scheme: light dark;
+    --bg: #fbfbfa; --fg: #1a1a18; --muted: #55554e; --rule: #dedcd4;
+    --term-bg: #f4f3ee; --term-fg: #23231f; --accent: #7a4b12;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #16161a; --fg: #e9e8e3; --muted: #a2a19a; --rule: #2e2e34;
+      --term-bg: #101014; --term-fg: #dcdbd4; --accent: #d9a441;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 3rem 1.25rem 5rem;
+    background: var(--bg); color: var(--fg);
+    font: 16px/1.65 ui-sans-serif, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  main { max-width: 46rem; margin: 0 auto; }
+  h1 { font-size: 2.25rem; letter-spacing: -0.02em; margin: 0 0 .35rem; }
+  .blurb { color: var(--muted); margin: 0 0 2rem; font-size: 1.05rem; }
+  .claim { font-size: 1.2rem; line-height: 1.5; margin: 0 0 2rem; border-left: 3px solid var(--accent); padding-left: 1rem; }
+  .facts { display: flex; flex-wrap: wrap; gap: 1.5rem; padding: 1rem 0; margin: 0 0 2rem;
+           border-top: 1px solid var(--rule); border-bottom: 1px solid var(--rule); }
+  .facts div { font-size: .9rem; }
+  .facts dt { color: var(--muted); font-size: .75rem; text-transform: uppercase; letter-spacing: .07em; }
+  .facts dd { margin: .15rem 0 0; font-variant-numeric: tabular-nums; }
+  h2 { font-size: .78rem; text-transform: uppercase; letter-spacing: .09em; color: var(--muted);
+       margin: 2.5rem 0 .5rem; font-weight: 600; }
+  .cmd { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .85rem;
+         color: var(--muted); margin: 0 0 .5rem; }
+  /* Wide output scrolls inside its own box. The page body never scrolls sideways. */
+  pre { background: var(--term-bg); color: var(--term-fg); padding: 1.25rem; border-radius: 6px;
+        overflow-x: auto; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: .8rem; line-height: 1.5; margin: 0; }
+  .note { color: var(--muted); font-size: .82rem; margin: .6rem 0 0; }
+  ul { list-style: none; padding: 0; margin: .5rem 0 0; }
+  li { padding: .35rem 0; border-bottom: 1px solid var(--rule); }
+  li span { color: var(--muted); font-size: .88rem; }
+  a { color: inherit; text-decoration-color: var(--accent); text-underline-offset: 3px; }
+  a:hover { color: var(--accent); }
+  footer { margin-top: 3.5rem; padding-top: 1.25rem; border-top: 1px solid var(--rule);
+           color: var(--muted); font-size: .82rem; }
+</style>
+</head>
+<body>
+<main>
+  <h1>QUACKZ</h1>
+  <p class="blurb">deflating a backtest that only looks good because it was picked out of two hundred.</p>
+
+  <p class="claim">A backtest that looks good because it was picked out of two hundred is a different object from a backtest that is good. This tells you which one you have, and shows the arithmetic behind every verdict.</p>
+
+  <dl class="facts">
+    <div><dt>Tests</dt><dd>467</dd></div>
+    <div><dt>Python</dt><dd>3.11 to 3.14</dd></div>
+    <div><dt>Release</dt><dd>v0.1.0</dd></div>
+    <div><dt>Licence</dt><dd>MIT</dd></div>
+  </dl>
+
+  <h2>The demo, as it really ran</h2>
+  <p class="cmd">$ uv run python examples/overfit_demo.py</p>
+  <pre>Search: 200 random signals on 252 bars of driftless synthetic prices, seed 7.
+Trial Sharpes: best 3.06, median 0.03, worst -2.92, standard deviation 1.22.
+
+BACKTEST AUDIT
+==============================================================================
+Verdict: FAIL. 2 FAIL, 0 WARN, 5 PASS.
+
+Sample                    2023-01-03 to 2023-12-19, 251 return bars
+Annualization             252.00 periods per year, supplied
+Costs charged             2.00 bps per unit of turnover
+Trials declared           200, dispersion V = 1.4916 per year (trial_sharpes)
+Resampling                1,000 resamples, seed 0
+Report version            0.1.0
+
+PERFORMANCE, NET OF COSTS
+------------------------------------------------------------------------------
+  Sharpe, annualized                  2.97
+  Sharpe, per bar                   0.1869
+  Sharpe, gross of costs              3.06
+  Annualized return                 69.94%
+  Annualized volatility             18.46%
+  Total return                      69.58%
+  Sortino                             5.19
+  Calmar                              9.26
+  Maximum drawdown                  -7.55%
+  Ulcer index                       0.0251
+  CVaR, worst 5 percent             -1.94%
+  Skewness                           0.274
+  Kurtosis, non-excess               2.894
+  Lag-1 autocorrelation            -0.0393
+  t-statistic, naive                  2.96
+  t-statistic, Newey-West             3.05
+
+CHECKS
+------------------------------------------------------------------------------
+[FAIL] Deflated Sharpe
+       Deflated Sharpe 0.339 against 200 declared trials; FAIL below 0.50,
+       WARN below 0.95.
+       - Observed Sharpe 2.97 annualized against a benchmark of 3.38, the best
+         a search of this size expects from pure noise.
+       - Trial Sharpe dispersion V = 1.4916 per year (0.005919 per bar),
+         source trial_sharpes.
+       - Probabilistic Sharpe against a zero benchmark: 0.999.
+       - Bars needed for 95% confidence the true Sharpe beats zero: 76,
+         against 251 observed.
+
+[FAIL] Noise floor
+       Observed Sharpe 2.97 is 0.88 times the 3.38 a search of 200 trials
+       expects from pure noise; FAIL at or below 1.00, WARN below 1.50.
+       - Floor per bar 0.2128, annualized 3.38, from 251 observations and V =
+         1.4916 per year (trial_sharpes).
+       - The floor is the expected maximum of the search, Bailey and Lopez de
+         Prado (2014) equation 1, the same benchmark the deflated Sharpe is
+         measured against.
+
+[PASS] Cost sensitivity
+       Break-even cost 65.4 bps per unit of turnover; FAIL below 5.0 bps, WARN
+       below 20.0 bps.
+       - Gross edge 22.42 bps per bar against mean turnover 0.343, total
+         turnover 86.0. The full grid is tabulated below.
+       - Break-even is closed form, 1e4 * mean(gross) / mean(turnover), not
+         read off the grid. Mean net return falls monotonically in cost; the
+         net Sharpe need not.
+
+[PASS] Profit concentration
+       The best 10 of 251 bars carry 19.7% of gross profit; FAIL above 50%,
+       WARN above 30%.
+       - Sharpe 2.97 on the full sample; 2.81 without the best 1, 2.30 without
+         the best 5, 1.65 without the best 10.
+       - Edge per unit of turnover: 63.43 bps, on total turnover 86.0. This is
+         measured on the net stream, so the cost already charged has been
+         taken out of it. The break-even cost above is the same quantity gross
+         of costs, and that is the one to hold against a broker's quote.
+
+[PASS] Resampling
+       Null-imposed p-value 0.001 at the least favourable block length; FAIL
+       above 0.10, WARN above 0.05.
+       - 1,000 stationary bootstrap resamples per block length, seed 0.
+         Observed Sharpe 2.97, maximum drawdown -7.6%.
+       - Block 5: p-value 0.001, Sharpe 5th to 95th percentile 1.55 to 4.39,
+         studentized 95% interval 1.21 to 4.65, drawdown 5th percentile
+         -12.5%.
+       - Block 20: p-value 0.000, Sharpe 5th to 95th percentile 1.64 to 4.29,
+         studentized 95% interval 1.36 to 4.58, drawdown 5th percentile
+         -11.3%.
+       - Block 60: p-value 0.000, Sharpe 5th to 95th percentile 1.90 to 4.07,
+         studentized 95% interval 1.70 to 4.31, drawdown 5th percentile
+         -10.2%.
+       - The p-value is the fraction of resamples of a mean-zero version of
+         these returns that reach the observed Sharpe. It is not the
+         probability that the Sharpe is negative, and 0.000 means below one in
+         the resample count.
+
+[PASS] Subperiod stability
+       Window Sharpe dispersion 1.20 against 2.26 expected from sampling noise
+       alone, ratio 0.53; FAIL at or above 2.50, WARN at or above 1.50.
+       - Sharpe by window: 3.37, 1.09, 3.64, 2.28, 4.04. Worst 1.09, full
+         sample 2.97.
+       - The windows are contiguous slices of one fixed signal, so this
+         measures temporal stability, not validation: nothing is refitted
+         between them.
+
+[PASS] Execution delay
+       Sharpe 3.15 with no delay; FAIL at or above 10.00, WARN at or above
+       5.00. One bar late it keeps 55.3% of that Sharpe against the 82.9% a
+       5.8 bar holding period implies, ratio 0.67; FAIL below 0.25, WARN below
+       0.50.
+       - Sharpe by delay: 0 bars 3.15, 1 bar 1.74, 2 bars 2.30, 3 bars 2.30,
+         all measured on the same 248 bars and gross of costs, so only the
+         timing changes between them.
+       - Mean holding period 5.8 bars, position autocorrelation 0.654.
+       - A one-bar delay only misplaces the position on the bars where it
+         moved, so a position held h bars keeps about (h - 1) / h of an edge
+         spread across its holding period. Raw decay carries no verdict of its
+         own, and never can: a two-bar signal has no reason to survive a
+         three-bar delay.
+       - Neither rule sees a leak whose horizon matches the holding period. A
+         position built from a twenty-bar forward return and held twenty bars
+         loses as little to a one-bar delay as an honest one does.
+
+DEFLATED SHARPE AGAINST THE NUMBER OF TRIALS
+------------------------------------------------------------------------------
+      Trials    Benchmark Sharpe       DSR
+           1                0.00    0.9987
+          10                1.92    0.8551
+          50                2.78    0.5752
+         100                3.09    0.4502
+       200 *                3.38    0.3387
+         500                3.73    0.2203
+       1,000                3.98    0.1534
+  * the declared trial count.
+  The deflated Sharpe clears 0.95 up to 4 trials and falls below it at 5: from
+  there on, a record this size is not distinguishable from the best of the
+  search.
+  The dispersion of trial Sharpes is held fixed while the count varies, so the
+  column answers what this record would be worth had the search been larger.
+
+COST SENSITIVITY
+------------------------------------------------------------------------------
+  Cost (bps)     Mean net return    Net Sharpe
+         0.0             0.2242%          3.06
+         1.0             0.2208%          3.01
+         2.0             0.2173%          2.97
+         5.0             0.2071%          2.83
+        10.0             0.1899%          2.59
+        20.0             0.1557%          2.11
+        50.0             0.0529%          0.69
+
+LIMITS OF THIS REPORT
+------------------------------------------------------------------------------
+  - Positions are read as given. A signal built from information that was not
+    available at the decision time will pass every check above, because none
+    of them can see how the position was constructed.
+  - The trial count is a declaration. A search that is not disclosed cannot be
+    deflated, and the deflated Sharpe is only as honest as the number
+    supplied.
+  - Resampling probes the sampling noise in the realised profit and loss on
+    this price path. It says nothing about a different path, and a block
+    bootstrap destroys dependence beyond the block length, so the drawdown
+    percentiles understate the tail.
+  - Survivorship and point-in-time universe construction are properties of the
+    data, not of the arithmetic, and are out of scope.
+  - One instrument, one position series. There is no portfolio, correlation or
+    capacity treatment here.</pre>
+  <p class="note">Output captured on 2026-08-24. It is committed to the repository and a test fails when it
+    stops matching a live run, so this page cannot quietly drift from the code it describes.</p>
+
+  <h2>Read it</h2>
+  <ul>
+    <li><a href="https://github.com/PNX89/QUACKZ">Source on GitHub</a> <span>the README carries the argument in full</span></li>
+    <li><a href="https://github.com/PNX89/QUACKZ/releases/tag/v0.1.0">Release v0.1.0</a> <span>changelog and tag</span></li>
+  </ul>
+
+  <h2>The rest of the toolset</h2>
+  <ul>
+      <li><a href="https://pnx89.github.io/QUOTEZ/">QUOTEZ</a> <span>market data an agent can read and cannot act on</span></li>
+      <li><a href="https://pnx89.github.io/QUELLZ/">QUELLZ</a> <span>measuring what prompt-injection containment costs in utility as well as in attack rate</span></li>
+      <li><a href="https://pnx89.github.io/QUIDZ/">QUIDZ</a> <span>refusing the outbound payment that would have gone out twice</span></li>
+      <li><a href="https://pnx89.github.io/QUESTZ/">QUESTZ</a> <span>stopping a scraper before it writes a CSV from a page that changed shape</span></li>
+  </ul>
+
+  <footer>Quelin Zammit. Built for the failure that does not announce itself.</footer>
+</main>
+</body>
+</html>

@@ -13,14 +13,17 @@ a package and must not become one just to be testable.
 from __future__ import annotations
 
 import importlib.util
+import json
 import re
 import shlex
+import subprocess
 import sys
 from pathlib import Path
 from types import ModuleType
 
 import pytest
 
+from quackz import __version__
 from quackz.checks import DEFAULT_THRESHOLDS
 from quackz.cli import build_parser
 
@@ -230,3 +233,62 @@ def test_the_examples_are_deterministic(name, capsys):
     first = capsys.readouterr().out
     module.main()
     assert capsys.readouterr().out == first
+
+
+def _escaped(text: str) -> str:
+    """The card is HTML, so the captured output appears in it escaped, not raw."""
+    return (
+        text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
+    )
+
+
+def test_the_committed_demo_output_still_matches_a_live_run() -> None:
+    """The Pages card publishes this output, so a stale copy is a lie on a public page.
+
+    The card is generated outside this repository and committed, because the generator is
+    deliberately not a repository and no job here could check it out. That puts the freshness
+    burden on the only test suite that can run the demo and compare, which is this one.
+    """
+    committed = (ROOT / "docs" / "evidence" / "demo.txt").read_text(encoding="utf-8")
+    live = subprocess.run(
+        [sys.executable, "examples/overfit_demo.py"],
+        capture_output=True,
+        text=True,
+        timeout=600,
+        check=True,
+        cwd=ROOT,
+    ).stdout
+    assert committed == live, (
+        "docs/evidence/demo.txt no longer matches a live run. "
+        "Run: uv run python scripts/capture_evidence.py, then regenerate the card."
+    )
+
+
+def test_the_published_card_carries_the_output_it_claims_to() -> None:
+    card = (ROOT / "site" / "index.html").read_text(encoding="utf-8")
+    demo = (ROOT / "docs" / "evidence" / "demo.txt").read_text(encoding="utf-8")
+    assert _escaped(demo.rstrip()) in card, "the card's terminal block is not the captured output"
+    # The card tells a reader that a test fails when the output stops matching. This is that
+    # test, and this assertion is what stops that sentence becoming false by deletion.
+    assert "a test fails when it" in card
+
+
+def test_the_card_states_numbers_that_are_true_today() -> None:
+    facts = json.loads((ROOT / "docs" / "evidence" / "facts.json").read_text(encoding="utf-8"))
+    result = subprocess.run(
+        [sys.executable, "-m", "pytest", "-o", "addopts=", "--collect-only", "-q"],
+        capture_output=True,
+        text=True,
+        timeout=600,
+        check=True,
+        cwd=ROOT,
+    )
+    match = re.search(r"^(\d+) tests? collected", result.stdout, re.MULTILINE)
+    assert match is not None, f"no collection total in:\n{result.stdout[-400:]}"
+    assert facts["tests"] == int(match.group(1)), "facts.json's test total is stale"
+    # Against the package version, never `git describe`: actions/checkout clones without tags,
+    # so a git-based assertion tests the shape of the checkout rather than the release.
+    assert facts["release"] == f"v{__version__}"
+    card = (ROOT / "site" / "index.html").read_text(encoding="utf-8")
+    assert f"<dd>{facts['tests']}</dd>" in card
+    assert f"<dd>{facts['release']}</dd>" in card
