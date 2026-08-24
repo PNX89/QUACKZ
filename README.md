@@ -6,6 +6,9 @@
 
 **If it quacks like an overfit.**
 
+If you read one file, read [`src/quackz/checks.py`](src/quackz/checks.py). The seven checks and
+the arithmetic behind every verdict are all in it, and everything else in the package trusts it.
+
 ![A real run of the demo: two hundred random signals searched over driftless synthetic prices,
 the best one picked, and then failed](docs/demo.svg)
 
