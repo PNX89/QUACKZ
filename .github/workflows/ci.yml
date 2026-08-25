@@ -15,36 +15,19 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  lint:
-    name: lint
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      # Pinned to the release, not to @v10: astral-sh/setup-uv publishes no moving major
-      # tag, so @v10 does not resolve and every job fails before it runs a step.
-      - uses: astral-sh/setup-uv@v10.0.1
-        with:
-          enable-cache: true
-      - run: uv sync --dev
-      - run: uv run ruff check .
-      - run: uv run ruff format --check .
-
-  test:
-    name: pytest on ${{ matrix.python-version }}
-    runs-on: ubuntu-latest
-    strategy:
-      # A failure on one version must not cancel the others: which versions break is the
-      # information worth having, and cancelling throws it away.
-      fail-fast: false
-      matrix:
-        python-version: ["3.11", "3.12", "3.13", "3.14"]
-    env:
-      UV_PYTHON: ${{ matrix.python-version }}
-    steps:
-      - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10.0.1
-        with:
-          enable-cache: true
-      - run: uv python install ${{ matrix.python-version }}
-      - run: uv sync --dev
-      - run: uv run pytest -q
+  # Lint, format and the suite across every supported interpreter, from the shared workflow.
+  #
+  # This repository used to write those commands out itself, and so did the other four, and so
+  # would the eleven still to come. A change to shared plumbing, an action version bump or a new
+  # gate, is now one file instead of sixteen sittings.
+  #
+  # Pinned to a tag rather than to @main deliberately: a reusable workflow tracking a moving
+  # branch means a commit somewhere else can turn this badge red with nothing changed here.
+  #
+  # What the pipeline is for, and the five things it deliberately does not gate, is written down:
+  # https://github.com/PNX89/.github/blob/main/docs/adr/0001-what-ci-is-for.md
+  checks:
+    name: checks
+    uses: PNX89/.github/.github/workflows/checks.yml@v1
+    with:
+      python-versions: '["3.11", "3.12", "3.13", "3.14"]'
