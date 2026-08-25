@@ -475,6 +475,8 @@ Part of the Q...Z toolset, all of it designing for the failure that does not ann
   out twice.
 - [QUESTZ](https://github.com/PNX89/QUESTZ), stopping a scraper before it writes a CSV from a
   page that changed shape.
+- [QUIZZ](https://github.com/PNX89/QUIZZ), answering what a statistic said at the time, and
+  refusing when it cannot.
 
 **On QUELLZ.** QUELLZ measures an attack success rate against a fixture built to obey, so its
 baseline is 1.00 on every case and carries no information. That is this repository's subject
