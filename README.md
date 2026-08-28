@@ -481,6 +481,8 @@ Part of the Q...Z toolset, all of it designing for the failure that does not ann
   confirmed as terminal rather than as a retry.
 - [QUENCHZ](https://github.com/PNX89/QUENCHZ), deciding in the open what a tool server gets free
   while it is still somebody's subprocess.
+- [QUILTZ](https://github.com/PNX89/QUILTZ), proving infrastructure code wrong without a cloud
+  account, and saying what that cannot show.
 
 **On QUELLZ.** QUELLZ measures an attack success rate against a fixture built to obey, so its
 baseline is 1.00 on every case and carries no information. That is this repository's subject
