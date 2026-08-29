@@ -489,6 +489,8 @@ Part of the Q...Z toolset, all of it designing for the failure that does not ann
   published, and failing the build when it quietly issues another.
 - [QUASHZ](https://github.com/PNX89/QUASHZ), refusing a row whose outcome had not been decided
   yet when the decision would have been made.
+- [QUALMZ](https://github.com/PNX89/QUALMZ), a fixed number of looks at the holdout, where
+  re-running the same configuration does not buy another.
 
 **On QUELLZ.** QUELLZ measures an attack success rate against a fixture built to obey, so its
 baseline is 1.00 on every case and carries no information. That is this repository's subject
