@@ -495,6 +495,8 @@ Part of the Q...Z toolset, all of it designing for the failure that does not ann
   recorded session the clock goes backwards.
 - [QUANDARYZ](https://github.com/PNX89/QUANDARYZ), counting the distinct screens a component can
   settle into when its responses arrive out of order.
+- [QUIETZ](https://github.com/PNX89/QUIETZ), watching whether the data arrived rather than
+  whether the server answered.
 
 **On QUELLZ.** QUELLZ measures an attack success rate against a fixture built to obey, so its
 baseline is 1.00 on every case and carries no information. That is this repository's subject
