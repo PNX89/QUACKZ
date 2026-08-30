@@ -4,6 +4,26 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- `Thresholds` now rejects a probability, profit share or correlation cut-off outside the
+  range that quantity can take, at construction. `dsr_warn` in particular is checked
+  against the open interval `(0, 1)`: it used to accept `1.0`, pass construction, and only
+  fail a hundred lines later inside `metrics.min_track_record_length`, with a bare
+  `ValueError` naming `confidence`, a parameter the caller never passed.
+- `checks.bootstrap` now checks the caller's own series for a total loss (a return at or
+  below -1) before building any resample from it, and names the series and the index of
+  the offending bar. It used to find such a value only after resampling and blame "a
+  resampled path", which does not exist, since every resample is bars of that same series
+  rearranged rather than a new value.
+- `metrics.expected_max_sharpe`'s "too large" guard checked the wrong inverse-cdf argument.
+  `(1/N) * e^-1` saturates to 1.0 at a lower `n_trials` than `1/N` does, about `e` times
+  sooner, so the raw `statistics.StatisticsError` escaped over a real band above roughly
+  6.6 quadrillion trials before the guard ever fired. It now checks the expression that
+  actually saturates first.
+
 ## [0.1.0] - 2026-08-18
 
 ### Added
