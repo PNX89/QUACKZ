@@ -31,3 +31,8 @@ jobs:
     uses: PNX89/.github/.github/workflows/checks.yml@v1
     with:
       python-versions: '["3.11", "3.12", "3.13", "3.14"]'
+      # The shared workflow's type step is opt in and defaults to off, so leaving this unset
+      # skipped it on all four interpreters while the package shipped py.typed and
+      # CONTRIBUTING told contributors that typing was a gate. Arguments come from the
+      # [tool.mypy] section of pyproject.toml rather than from here.
+      run-mypy: true

@@ -576,6 +576,23 @@ def test_a_degenerate_resample_does_not_poison_the_batch():
     assert list(sharpes[:2]) == [0.0, 0.0]
 
 
+def test_a_constant_resample_is_degenerate_even_when_its_dust_is_not_an_exact_zero():
+    """The relative half of `_negligible_dispersion`, which the batch test above never reaches.
+
+    Both constant rows in that test cancel to a std of exactly 0.0, so an exact-zero test
+    would pass it. Sixty-three identical bars do not cancel that cleanly: the reduction
+    leaves dust of order 1e-18, and dividing a mean of 0.01 by it manufactures a Sharpe of
+    5e15. The dust is asserted first so that a numpy release making the reduction exact
+    fails here loudly, rather than quietly turning this into a second exact-zero case.
+    """
+    paths = np.full((1, 63), 0.01)
+    dust = float(paths.std(axis=1, ddof=1)[0])
+    assert dust > 0.0
+    assert dust <= 1e-14 * 0.01
+    assert checks._sharpe_rows(paths)[0] == 0.0
+    assert checks._sharpe_hac_standard_error_rows(paths, lags=2)[0] == 0.0
+
+
 def test_stationary_bootstrap_draws_stay_inside_the_sample():
     rng = np.random.default_rng(0)
     indices = checks._stationary_bootstrap_indices(40, block_length=5, n_resamples=100, rng=rng)
@@ -778,6 +795,32 @@ def test_subperiod_stability_charges_costs_when_asked_to():
     assert charged.full_sample_sharpe < free.full_sample_sharpe
 
 
+def test_subperiod_stability_refuses_a_sample_that_is_flat_over_one_window():
+    """A window with no dispersion has an infinite Sharpe, and the check must refuse it.
+
+    The dispersion of a set holding an infinity is a NaN, so without the guard this returns
+    a PASS whose dispersion ratio is NaN. A return of exactly 1.0 on every bar is the
+    reliable way to build such a window: the prices are then 100 * 2**k and the ratio of
+    two adjacent powers of two is exact, so the window's standard deviation really is 0.0
+    rather than rounding dust. That is asserted first, because dust would make the Sharpe
+    merely enormous and this test would be exercising the guard it names no longer.
+    """
+    rng = np.random.default_rng(3)
+    n = 300
+    bar_returns = 0.01 * rng.standard_normal(n)
+    bar_returns[:120] = 1.0
+    prices = prices_from_returns(bar_returns)
+    positions = pd.Series(np.ones(n), index=prices.index)
+
+    streams = rt.build_returns(prices, positions, periods_per_year=PPY)
+    first_window = np.array_split(streams.net.to_numpy(), 3)[0]
+    assert first_window.std(ddof=1) == 0.0
+    assert math.isinf(metrics.sharpe(first_window, periods_per_year=PPY))
+
+    with pytest.raises(QuackzInputError, match="no return dispersion at all"):
+        checks.subperiod_stability(prices, positions, n_splits=3, periods_per_year=PPY)
+
+
 def test_subperiod_stability_needs_enough_bars_per_window():
     prices, positions = drifting_market(n=9)
     with pytest.raises(QuackzInputError, match="return bars"):
@@ -914,7 +957,12 @@ def float_leaves(value: object) -> list[float]:
 
 
 def test_no_check_result_leaks_a_nan():
-    """A NaN in a report is a silent wrong answer; every degenerate path returns a value."""
+    """A NaN in a report is a silent wrong answer, so no check may leak one.
+
+    This is the healthy sample, run through every check at once: the arithmetic that could
+    produce a NaN without any degeneracy to blame it on. The degenerate inputs are refused
+    at the door instead, each by the test named for the guard that refuses it.
+    """
     prices, positions = drifting_market(n=300)
     streams = rt.build_returns(prices, positions, periods_per_year=PPY)
     results = [

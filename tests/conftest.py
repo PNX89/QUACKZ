@@ -165,6 +165,43 @@ def reconciled_eval(honest_strategy) -> Evaluation:
     )
 
 
+# The dispersion declared alongside the capped record. Named because two fixtures and the
+# test that brackets the cap all have to quote the same one; a search re-run at a different
+# dispersion is a different search, and the break-even count would not be comparable.
+CAPPED_VAR_TRIAL_SHARPES = 0.02
+
+
+def build_capped(*, n: int = N_BARS, seed: int = 0) -> tuple[pd.Series, pd.Series]:
+    """A record so strong the break-even trial search runs into its own cap.
+
+    A Sharpe near ten held for 600 bars keeps the deflated Sharpe above the target even at
+    a million trials. Nothing about that is realistic, which is the point of having a cap
+    at all, and it is the third arm of the break-even sentence that no other fixture reaches.
+    """
+    rng = np.random.default_rng(seed)
+    bar_returns = 0.0025 + 0.004 * rng.standard_normal(n)
+    prices = _prices(bar_returns)
+    return prices, pd.Series(np.ones(n), index=prices.index, name="position")
+
+
+@pytest.fixture(scope="session")
+def capped_strategy() -> tuple[pd.Series, pd.Series]:
+    return build_capped()
+
+
+@pytest.fixture(scope="session")
+def capped_eval(capped_strategy) -> Evaluation:
+    prices, positions = capped_strategy
+    return evaluate(
+        prices,
+        positions,
+        periods_per_year=PPY,
+        n_trials=10,
+        var_trial_sharpes=CAPPED_VAR_TRIAL_SHARPES,
+        bootstrap_resamples=RESAMPLES,
+    )
+
+
 def write_csv(
     path,
     prices: pd.Series,

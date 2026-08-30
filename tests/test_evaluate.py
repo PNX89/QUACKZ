@@ -19,11 +19,17 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from conftest import COSTS_BPS, PPY, RESAMPLES, build_honest
+from conftest import CAPPED_VAR_TRIAL_SHARPES, COSTS_BPS, PPY, RESAMPLES, build_honest
 from quackz import metrics
 from quackz import returns as rt
 from quackz.checks import DEFAULT_THRESHOLDS, Thresholds, Verdict
-from quackz.evaluate import DSR_TRIAL_GRID, MIN_OBSERVATIONS, Evaluation, evaluate
+from quackz.evaluate import (
+    DSR_BREAK_EVEN_CAP,
+    DSR_TRIAL_GRID,
+    MIN_OBSERVATIONS,
+    Evaluation,
+    evaluate,
+)
 from quackz.returns import QuackzInputError, net_returns
 
 
@@ -353,6 +359,29 @@ def test_the_break_even_trial_count_brackets_the_target(honest_eval, honest_stra
     assert beyond.checks.deflated_sharpe.dsr < DEFAULT_THRESHOLDS.dsr_warn
 
 
+def test_a_record_that_still_clears_the_target_at_the_cap_says_so(capped_eval, capped_strategy):
+    """The third arm of the break-even search: neither a real count nor a refusal.
+
+    Without this the cap branch was dead code, and deleting it made the search return
+    999,999 with `capped` false, which reads as a genuine break-even count and is not one.
+    """
+    check = capped_eval.checks.deflated_sharpe
+    assert check.break_even_capped is True
+    assert check.break_even_n_trials == DSR_BREAK_EVEN_CAP
+    # What the sentence claims is that the record is still above the target AT the cap, so
+    # the search stopping is a choice rather than the count where the record gives out.
+    # Re-run at the cap itself, holding the declared dispersion fixed, or the search being
+    # re-run is a different search.
+    prices, positions = capped_strategy
+    at_the_cap = quick(
+        prices,
+        positions,
+        n_trials=DSR_BREAK_EVEN_CAP,
+        var_trial_sharpes=CAPPED_VAR_TRIAL_SHARPES,
+    )
+    assert at_the_cap.checks.deflated_sharpe.dsr >= check.confidence
+
+
 def test_a_record_that_never_clears_the_target_reports_no_break_even_count(honest_strategy):
     prices, _ = honest_strategy
     flat = pd.Series(np.where(np.arange(len(prices)) % 2 == 0, 1.0, -1.0), index=prices.index)
@@ -452,6 +481,21 @@ def test_a_claimed_stream_missing_bars_names_them(honest_strategy):
     claimed = net_returns(prices, positions, costs_bps=COSTS_BPS).iloc[5:]
     with pytest.raises(QuackzInputError, match="missing 5 of the"):
         quick(prices, positions, costs_bps=COSTS_BPS, claimed_returns=claimed)
+
+
+def test_a_claimed_stream_two_percent_too_generous_warns_on_the_gap_alone(reconciled_eval):
+    """The WARN band's second disjunct: the terminal wealth gap, not the correlation.
+
+    This is the verdict `reconciled_eval` was built to produce and the one it never stated,
+    so dropping the gap from the WARN condition left the whole suite green. The correlation
+    is pinned above its own cut-off first: a fixture that warned for both reasons at once
+    would go on passing with the gap disjunct gone, which is the failure being closed here.
+    """
+    check = reconciled_eval.checks.reconcile
+    assert check.correlation >= DEFAULT_THRESHOLDS.reconcile_correlation_warn
+    assert abs(check.cumulative_gap) > DEFAULT_THRESHOLDS.reconcile_cumulative_gap_warn
+    assert abs(check.cumulative_gap) <= DEFAULT_THRESHOLDS.reconcile_cumulative_gap_fail
+    assert check.verdict is Verdict.WARN
 
 
 def test_reconcile_is_absent_when_nothing_was_claimed(honest_eval, reconciled_eval):
