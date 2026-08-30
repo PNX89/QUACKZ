@@ -23,6 +23,7 @@ from __future__ import annotations
 import json
 import math
 import textwrap
+from collections.abc import Callable, Sequence
 from dataclasses import asdict, dataclass
 from typing import Any
 
@@ -159,9 +160,23 @@ def _deflated_sharpe(check: DeflatedSharpeCheck, cuts: Thresholds) -> tuple[str,
 
 def _noise_floor(check: NoiseFloorCheck, cuts: Thresholds) -> tuple[str, list[str]]:
     if check.annualized <= 0.0:
+        # A floor of zero arrives from two places that do not mean the same thing: one
+        # declared trial, or a search whose trials all scored alike. This line named the
+        # first in both cases, so a report could say "one declared trial" under a meta
+        # block reporting two hundred. There is also nothing to divide by here, so the
+        # ratio cut-offs cannot be quoted; the rule that actually grades the line is the
+        # sign of the observed Sharpe, and that is what is quoted in its place.
+        if check.n_trials == 1:
+            reason = "one declared trial is no selection at all"
+        else:
+            reason = (
+                f"{check.n_trials:,} declared trials with no dispersion between them, so the "
+                "search had nothing to select from"
+            )
         finding = (
-            f"Observed Sharpe {_num(check.observed_sharpe)} against a floor of zero: one "
-            "declared trial is no selection at all."
+            f"Observed Sharpe {_num(check.observed_sharpe)} against a floor of zero: "
+            f"{reason}; with no floor to divide by, FAIL at or below a Sharpe of zero and "
+            "no WARN band."
         )
     else:
         finding = (
@@ -335,7 +350,10 @@ def _reconcile(check: ReconcileResult, cuts: Thresholds) -> tuple[str, list[str]
     return finding, details
 
 
-_BUILDERS = {
+# The value type is deliberately loose in its first argument: each builder takes the one
+# check result it renders, and the dispatch key is what pairs them. Narrowing it would mean
+# a union of eight result types that no caller ever needs.
+_BUILDERS: dict[str, Callable[[Any, Thresholds], tuple[str, list[str]]]] = {
     "deflated_sharpe": _deflated_sharpe,
     "noise_floor": _noise_floor,
     "cost_sweep": _cost_sweep,
@@ -494,7 +512,7 @@ def text_report(evaluation: Evaluation) -> str:
     return "\n".join(out)
 
 
-def _md_table(headers: tuple[str, ...], rows: list[tuple[str, ...]]) -> list[str]:
+def _md_table(headers: tuple[str, ...], rows: Sequence[tuple[str, ...]]) -> list[str]:
     out = ["| " + " | ".join(headers) + " |", "|" + "|".join(["---"] * len(headers)) + "|"]
     out += ["| " + " | ".join(row) + " |" for row in rows]
     out.append("")

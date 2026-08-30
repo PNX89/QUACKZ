@@ -2,8 +2,12 @@
 
 Both classes follow the scikit-learn splitter protocol (`get_n_splits`, `split`) without
 importing scikit-learn, so they drop into an existing pipeline but do not add a dependency.
-`split` accepts anything with a length, or a plain integer count of observations, and
-yields pairs of integer position arrays.
+Following it means accepting the convention `cross_validate`, `cross_val_score` and
+`GridSearchCV` actually call with, which is three positional arguments rather than one:
+`split(X, y, groups)` and `get_n_splits(X, y, groups)`. The labels and the groups are
+accepted and ignored, because a splitter that cuts a sample by time looks at nothing but
+how many observations there are. `split` accepts anything with a length, or a plain integer
+count of observations, and yields pairs of integer position arrays.
 
 Which one to use. `WalkForward` is the honest default for trading research: every training
 observation precedes every test observation, which is the only arrangement that matches how
@@ -72,7 +76,7 @@ class WalkForward:
         if not isinstance(self.expanding, bool):
             raise QuackzInputError(f"expanding must be a bool, got {self.expanding!r}")
 
-    def get_n_splits(self, data: object = None) -> int:
+    def get_n_splits(self, data: object = None, y: object = None, groups: object = None) -> int:
         """Number of splits produced, which does not depend on the data."""
         return int(self.n_splits)
 
@@ -87,7 +91,9 @@ class WalkForward:
             )
         return size
 
-    def split(self, data: object) -> Iterator[tuple[np.ndarray, np.ndarray]]:
+    def split(
+        self, data: object, y: object = None, groups: object = None
+    ) -> Iterator[tuple[np.ndarray, np.ndarray]]:
         """Yield `(train_indices, test_indices)` in chronological order."""
         n_obs = _n_observations(data)
         size = self.test_size(n_obs)
@@ -138,7 +144,7 @@ class EmbargoedKFold:
                 "the TOTAL number of observations, not of a fold."
             )
 
-    def get_n_splits(self, data: object = None) -> int:
+    def get_n_splits(self, data: object = None, y: object = None, groups: object = None) -> int:
         """Number of folds produced, which does not depend on the data."""
         return int(self.n_splits)
 
@@ -152,7 +158,9 @@ class EmbargoedKFold:
         """
         return math.ceil(float(self.embargo_pct) * _n_observations(data))
 
-    def split(self, data: object) -> Iterator[tuple[np.ndarray, np.ndarray]]:
+    def split(
+        self, data: object, y: object = None, groups: object = None
+    ) -> Iterator[tuple[np.ndarray, np.ndarray]]:
         """Yield `(train_indices, test_indices)`, test folds in chronological order."""
         n_obs = _n_observations(data)
         splits = int(self.n_splits)

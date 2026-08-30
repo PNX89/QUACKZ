@@ -34,7 +34,26 @@ build-backend = "uv_build"
 # scipy is a DEV dependency only. It exists to prove that the stdlib NormalDist and the
 # method-of-moments estimators agree with a reference implementation to 1e-12.
 [dependency-groups]
-dev = ["pytest>=8.0", "ruff>=0.6", "scipy>=1.11"]
+dev = ["mypy>=1.11", "pytest>=8.0", "ruff>=0.6", "scipy>=1.11"]
+
+# The package ships src/quackz/py.typed, which tells a downstream user that these
+# annotations were checked by something. Nothing checked them: the shared CI workflow's type
+# step is opt in and defaults to off, so the marker promised a checked package for as long as
+# ci.yml left `run-mypy` unset. This section is what the bare `uv run mypy` in that step reads.
+#
+# `files` is src alone, because src is the whole of what py.typed makes a promise about; the
+# suite and the demos are read by people rather than by importers.
+[tool.mypy]
+files = ["src"]
+strict = true
+# pandas ships no stubs, so every value that comes back through it is Any by construction.
+# Wrapping each return in float() to satisfy this one check would add ceremony and no safety,
+# and it would hide the genuinely untyped boundary rather than mark it.
+warn_return_any = false
+
+[[tool.mypy.overrides]]
+module = ["pandas.*"]
+ignore_missing_imports = true
 
 [tool.ruff]
 line-length = 100

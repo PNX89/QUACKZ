@@ -23,6 +23,7 @@ here is one CI does not run:
 uv sync --dev
 uv run ruff check .
 uv run ruff format --check .
+uv run mypy
 uv run pytest -q
 ```
 

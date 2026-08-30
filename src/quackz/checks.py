@@ -374,8 +374,14 @@ def reconcile(
     two different strategies.
     """
     cuts = DEFAULT_THRESHOLDS if thresholds is None else thresholds
-    both_series = isinstance(claimed, pd.Series) and isinstance(recomputed, pd.Series)
-    if both_series and not claimed.index.equals(recomputed.index):
+    # The isinstance calls are inline rather than held in a name: both parameters are
+    # ArrayLike, and only a reader that sees the narrowing here can tell that the index
+    # comparison below is reached on Series alone.
+    if (
+        isinstance(claimed, pd.Series)
+        and isinstance(recomputed, pd.Series)
+        and not claimed.index.equals(recomputed.index)
+    ):
         only_claimed = claimed.index.difference(recomputed.index)
         only_recomputed = recomputed.index.difference(claimed.index)
         raise QuackzInputError(
@@ -407,6 +413,7 @@ def reconcile(
     tracking_error = float((a - b).std(ddof=1))
     gap = _compounded_growth(a, name="claimed") - _compounded_growth(b, name="recomputed")
 
+    causes: tuple[str, ...]
     if gap > _GAP_TOLERANCE:
         direction = "claimed_higher"
         causes = (*_RECONCILE_CAUSES_COMMON, _RECONCILE_CAUSE_CLAIMED_HIGHER)

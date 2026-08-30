@@ -18,7 +18,7 @@ import pytest
 
 from conftest import PPY, RESAMPLES
 from quackz.checks import Verdict
-from quackz.evaluate import DSR_TRIAL_GRID, evaluate
+from quackz.evaluate import DSR_BREAK_EVEN_CAP, DSR_TRIAL_GRID, evaluate
 from quackz.report import (
     CHECK_TITLES,
     LIMITS,
@@ -154,8 +154,60 @@ def test_the_broker_comparison_points_at_the_gross_figure(honest_eval):
 
 
 def test_every_finding_carries_the_rule_that_graded_it(any_eval):
+    # The exemption this once carried for noise_floor was unconditional, so it covered the
+    # branch that could quote a threshold as well as the one that could not, and the zero
+    # floor branch printed a FAIL naming no rule at all for as long as it stood.
     for line in check_lines(any_eval):
-        assert "FAIL" in line.finding or line.key == "noise_floor"
+        assert "FAIL" in line.finding
+
+
+def flat_position_market(*, drift: float, n: int = 400, seed: int = 11):
+    """A constant long position on a drifting market, for the two zero-floor branches."""
+    rng = np.random.default_rng(seed)
+    bar_returns = 0.01 * rng.standard_normal(n) + drift
+    index = pd.date_range("2019-01-02", periods=n, freq="B")
+    prices = pd.Series(100.0 * np.cumprod(1.0 + bar_returns), index=index, name="close")
+    return prices, pd.Series(np.ones(n), index=index, name="position")
+
+
+def noise_floor_finding(evaluation) -> str:
+    return next(line for line in check_lines(evaluation) if line.key == "noise_floor").finding
+
+
+def test_a_zero_floor_that_fails_still_names_the_rule_that_failed_it():
+    """The default n_trials of 1 puts the floor at zero, so a loser FAILs on the sign alone.
+
+    That verdict used to print as a neutral remark with no cut-off in it, which is the one
+    thing this module's docstring says a finding may never do.
+    """
+    prices, positions = flat_position_market(drift=-0.0005)
+    evaluation = evaluate(prices, positions, periods_per_year=PPY, bootstrap_resamples=RESAMPLES)
+    assert evaluation.checks.noise_floor.verdict is Verdict.FAIL
+    finding = noise_floor_finding(evaluation)
+    assert "one declared trial is no selection at all" in finding
+    assert "FAIL at or below a Sharpe of zero" in finding
+
+
+def test_a_zero_floor_from_undispersed_trials_names_the_count_it_actually_saw():
+    """Trials that all scored alike put the floor at zero without there being only one.
+
+    The sentence claimed a single trial in both cases, so this report said "one declared
+    trial" while its own meta block said two hundred.
+    """
+    prices, positions = flat_position_market(drift=0.0004)
+    evaluation = evaluate(
+        prices,
+        positions,
+        periods_per_year=PPY,
+        n_trials=200,
+        var_trial_sharpes=0.0,
+        bootstrap_resamples=RESAMPLES,
+    )
+    assert evaluation.checks.noise_floor.annualized == 0.0
+    finding = noise_floor_finding(evaluation)
+    assert "200 declared trials" in finding
+    assert "one declared trial" not in finding
+    assert "FAIL at or below a Sharpe of zero" in finding
 
 
 def test_an_overridden_threshold_shows_up_in_the_wording(honest_strategy):
@@ -179,7 +231,7 @@ def test_the_trial_table_is_printed_with_the_published_grid(fallback_eval):
         assert f"{row.dsr:,.4f}" in table
 
 
-def test_the_break_even_trial_count_is_stated_in_words(honest_eval, honest_strategy):
+def test_the_break_even_trial_count_is_stated_in_words(honest_eval, honest_strategy, capped_eval):
     crosses = honest_eval.checks.deflated_sharpe.break_even_n_trials
     assert f"clears 0.95 up to {crosses:,} trials" in flat(text_report(honest_eval))
 
@@ -190,6 +242,14 @@ def test_the_break_even_trial_count_is_stated_in_words(honest_eval, honest_strat
     )
     assert losing.checks.deflated_sharpe.break_even_n_trials is None
     assert "does not reach 0.95 even at a single trial" in flat(text_report(losing))
+
+    # The third arm. Without a fixture that reaches the cap, this sentence printed the
+    # second arm's wording instead and named a break-even count of 999,999 that no longer
+    # marked where the record gives out.
+    assert capped_eval.checks.deflated_sharpe.break_even_capped is True
+    assert f"still clears 0.95 at {DSR_BREAK_EVEN_CAP:,} trials, where the search stops" in flat(
+        text_report(capped_eval)
+    )
 
 
 def test_the_cost_table_matches_the_check_it_came_from(honest_eval):
