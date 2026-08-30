@@ -329,9 +329,13 @@ def expected_max_sharpe(*, n_trials: int, var_trial_sharpes: float) -> float:
         )
     if n <= 1:
         return 0.0
-    if 1.0 - 1.0 / n >= 1.0:
+    # (1/N) * e^-1 is smaller than 1/N, so `1 - (1/N) * e^-1` saturates to 1.0 at a LOWER
+    # n_trials than `1 - 1/N` does. Guarding the first expression only left this second one,
+    # the one inv_cdf is actually evaluated at just below, free to hit the same wall about e
+    # times sooner and raise the raw statistics.StatisticsError this guard exists to replace.
+    if 1.0 - (1.0 / n) * math.exp(-1.0) >= 1.0:
         raise ValueError(
-            f"n_trials={n} is too large to evaluate Phi^-1[1 - 1/N] in double precision"
+            f"n_trials={n} is too large to evaluate Phi^-1[1 - (1/N) * e^-1] in double precision"
         )
     g = _EULER_MASCHERONI
     upper = _NORM.inv_cdf(1.0 - 1.0 / n)

@@ -190,6 +190,23 @@ NOISE_FLOOR_RATIO_FAIL = 1.0
 _GAP_TOLERANCE = 1e-12
 
 
+# Fields that are themselves probabilities or profit shares, so a cut-off outside [0, 1] is
+# not a strict-but-valid preference, it is a value the quantity being compared can never take.
+# `dsr_warn` is stricter still: `evaluate` passes it straight through to
+# `metrics.min_track_record_length` as `confidence`, which requires the open interval, so 0.0
+# and 1.0 crash there with a message that never mentions `dsr_warn`.
+_PROBABILITY_FIELDS = frozenset(
+    {
+        "dsr_fail",
+        "bootstrap_p_value_warn",
+        "bootstrap_p_value_fail",
+        "concentration_profit_share_warn",
+        "concentration_profit_share_fail",
+    }
+)
+# Pearson correlation coefficients, so [-1, 1] rather than [0, 1].
+_CORRELATION_FIELDS = frozenset({"reconcile_correlation_warn", "reconcile_correlation_fail"})
+
 # Milder cut-off, harsher cut-off, and the direction the harsher one must lie in. A swapped
 # pair is silent otherwise: every verdict comes back PASS and the report looks clean.
 _THRESHOLD_LADDERS = (
@@ -246,7 +263,23 @@ class Thresholds:
                 raise QuackzInputError(
                     f"threshold {spec.name} must be a finite number, got {value!r}"
                 )
-            object.__setattr__(self, spec.name, float(value))
+            value = float(value)
+            if spec.name == "dsr_warn" and not 0.0 < value < 1.0:
+                raise QuackzInputError(
+                    f"dsr_warn must be strictly between 0 and 1, got {value!r}; it is used "
+                    "as a confidence level as well as a comparison, and 0 or 1 is not a "
+                    "confidence anything can be evaluated at"
+                )
+            if spec.name in _PROBABILITY_FIELDS and not 0.0 <= value <= 1.0:
+                raise QuackzInputError(
+                    f"threshold {spec.name} is a probability or a share of profit and must "
+                    f"lie in [0, 1], got {value!r}"
+                )
+            if spec.name in _CORRELATION_FIELDS and not -1.0 <= value <= 1.0:
+                raise QuackzInputError(
+                    f"threshold {spec.name} is a correlation and must lie in [-1, 1], got {value!r}"
+                )
+            object.__setattr__(self, spec.name, value)
         for warn_name, fail_name, direction in _THRESHOLD_LADDERS:
             warn_value = getattr(self, warn_name)
             fail_value = getattr(self, fail_name)
@@ -904,6 +937,16 @@ def bootstrap(
     """
     cuts = DEFAULT_THRESHOLDS if thresholds is None else thresholds
     arr = _finite_array(returns, name="returns", min_len=10)
+    # Checked here, against the caller's own series, before any resample is built from it.
+    # Every resample is bars of `arr` rearranged, never a new value, so a total loss found
+    # only after resampling would blame "a resampled path" for a bar the caller supplied,
+    # naming neither the input nor where in it the bad bar sits.
+    bad = np.flatnonzero(arr <= -1.0)
+    if bad.size:
+        raise QuackzInputError(
+            f"returns contains a value at or below -1 (total loss) at index {int(bad[0])}; "
+            "the compounded curve is undefined beyond that point"
+        )
     ppy = _check_periods_per_year(periods_per_year)
     n_obs = int(arr.size)
     resamples = _check_int(n_resamples, name="n_resamples", minimum=2)

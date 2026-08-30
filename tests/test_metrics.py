@@ -353,6 +353,17 @@ def test_expected_max_sharpe_rejects_negative_variance():
     with pytest.raises(ValueError, match="non-negative"):
         metrics.expected_max_sharpe(n_trials=10, var_trial_sharpes=-0.1)
 
+    # `(1/N) * e^-1` is smaller than `1/N`, so it hits 1.0 at a lower N than `1/N` does. A
+    # guard written against `1 - 1/N` alone stays quiet over the whole band where this
+    # second inverse-cdf argument has already saturated, and NormalDist.inv_cdf then raises
+    # its own bare error there instead. Pinned on both sides of the true boundary, the one
+    # the second argument actually saturates at.
+    just_inside = 6627126856707895
+    just_outside = 6627126856707896
+    metrics.expected_max_sharpe(n_trials=just_inside, var_trial_sharpes=1.0)
+    with pytest.raises(ValueError, match="too large"):
+        metrics.expected_max_sharpe(n_trials=just_outside, var_trial_sharpes=1.0)
+
 
 # --------------------------------------------------------------------------------------
 # Descriptive metrics

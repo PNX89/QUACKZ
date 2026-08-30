@@ -194,6 +194,11 @@ def test_n_trials_must_be_a_positive_integer(honest_strategy):
         quick(prices, positions, n_trials=0)
     with pytest.raises(QuackzInputError, match="n_trials"):
         quick(prices, positions, n_trials=2.5)
+    # `True` is an `int` in Python, so a check that only tested `isinstance(n_trials, int)`
+    # would read it as one declared trial, silently, which is the reading that deflates a
+    # search the least. Nothing here exercised that case before this.
+    with pytest.raises(QuackzInputError, match="n_trials"):
+        quick(prices, positions, n_trials=True)
 
 
 # --------------------------------------------------------------------------------------
@@ -434,6 +439,25 @@ def test_a_swapped_threshold_ladder_is_rejected():
         Thresholds(bootstrap_p_value_warn=0.2, bootstrap_p_value_fail=0.1)
     with pytest.raises(QuackzInputError, match="finite"):
         Thresholds(dsr_warn=math.nan)
+    # dsr_warn=1.0 used to pass construction and then crash a hundred lines away inside
+    # metrics.min_track_record_length, which requires it strictly as `confidence` in (0, 1)
+    # and names a parameter the caller never passed. It is checked here, at construction,
+    # against the open interval; the other probabilities and profit shares only need the
+    # closed interval [0, 1], and a correlation cut-off is checked against [-1, 1].
+    with pytest.raises(QuackzInputError, match="dsr_warn"):
+        Thresholds(dsr_warn=1.0)
+    with pytest.raises(QuackzInputError, match="dsr_warn"):
+        Thresholds(dsr_warn=0.0)
+    with pytest.raises(QuackzInputError, match="dsr_fail"):
+        Thresholds(dsr_warn=0.99, dsr_fail=1.5)
+    with pytest.raises(QuackzInputError, match="bootstrap_p_value_fail"):
+        Thresholds(bootstrap_p_value_fail=-0.05)
+    with pytest.raises(QuackzInputError, match="concentration_profit_share_fail"):
+        Thresholds(concentration_profit_share_fail=1.2)
+    with pytest.raises(QuackzInputError, match="reconcile_correlation_warn"):
+        Thresholds(reconcile_correlation_warn=1.5)
+    # A correlation is allowed to be negative: that is an odd cut-off, not an invalid one.
+    Thresholds(reconcile_correlation_warn=-0.4, reconcile_correlation_fail=-0.5)
 
 
 def test_equal_warn_and_fail_cut_offs_collapse_the_warn_band(honest_strategy):

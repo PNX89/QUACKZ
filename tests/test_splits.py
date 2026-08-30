@@ -122,6 +122,11 @@ def test_indices_are_integer_arrays_usable_for_positional_indexing():
 def test_walk_forward_rejects_a_split_count_it_cannot_honour():
     with pytest.raises(QuackzInputError, match="observations"):
         list(splits.WalkForward(10).split(8))
+    # `True` is an `int` in Python, and it survives the `n_obs < 2` check either way
+    # (`int(True) == 1`), so refusing it by name changes only the message, not the
+    # verdict. Checked anyway, so a change to that message is a deliberate one.
+    with pytest.raises(QuackzInputError, match="bool"):
+        list(splits.WalkForward(3).split(True))
 
 
 @pytest.mark.parametrize("n_splits", [0, -1])
