@@ -263,6 +263,24 @@ def test_every_line_of_the_readme_block_is_real_output(capsys):
         )
         cursor += 1
 
+    # The "### Deflated Sharpe" section quotes a second table, in the same "this is what it
+    # prints" register, with none of its eleven numbers checked anywhere: it carries no cut
+    # marker, so it was never reached by `readme_output_block`, which only ever looks at the
+    # first text block of "What it prints". Checked here against the SAME live run, on the
+    # full, untruncated output, since the table is printed further down than this block cuts.
+    trial_blocks = [b for b in code_blocks(README, "text") if "DEFLATED SHARPE AGAINST" in b]
+    assert len(trial_blocks) == 1, "the deflation table block moved, or there is more than one"
+    trial_lines = [line for line in trial_blocks[0].splitlines() if line.strip()]
+    assert len(trial_lines) > 10, "the deflation table block no longer quotes the trial grid"
+    trial_position = 0
+    for line in trial_lines:
+        while trial_position < len(printed) and printed[trial_position] != line:
+            trial_position += 1
+        assert trial_position < len(printed), (
+            f"the deflation table quotes a line the run never printed: {line!r}"
+        )
+        trial_position += 1
+
 
 def test_the_overfit_demo_fails_on_selection_and_nothing_else(capsys):
     load_example("overfit_demo").main()
@@ -388,6 +406,16 @@ def test_the_card_states_numbers_that_are_true_today() -> None:
     card = (ROOT / "site" / "index.html").read_text(encoding="utf-8")
     assert f"<dd>{facts['tests']}</dd>" in card
     assert f"<dd>{facts['release']}</dd>" in card
+    # The card's own claim is that it "cannot quietly drift from the code it describes"
+    # because a test fails when it stops matching a live run. Before this, the sentence
+    # covered only half the card: these two facts are written by the same capture script
+    # and read from the same facts.json, and neither was checked against the card at all.
+    assert f"<dd>{facts['python']}</dd>" in card, (
+        "the card's Python range no longer matches facts.json"
+    )
+    assert f"captured on {facts['captured']}" in card, (
+        "the card's capture date no longer matches facts.json"
+    )
 
 
 def test_the_readme_frame_is_built_from_the_captured_output() -> None:

@@ -347,6 +347,10 @@ def test_latency_sensitivity_rejects_a_zero_lag_range():
     prices, positions = drifting_market(n=50)
     with pytest.raises(QuackzInputError, match="max_lag"):
         checks.latency_sensitivity(prices, positions, max_lag=0, periods_per_year=PPY)
+    # `True` is an `int` in Python, so an `isinstance(max_lag, int)` check alone would read
+    # it as `max_lag=1` and silently run a one-lag sweep instead of refusing the call.
+    with pytest.raises(QuackzInputError, match="max_lag"):
+        checks.latency_sensitivity(prices, positions, max_lag=True, periods_per_year=PPY)
 
 
 # --------------------------------------------------------------------------------------
@@ -552,9 +556,31 @@ def test_bootstrap_rejects_bad_arguments(kwargs, message):
         checks.bootstrap(data, **call)
 
 
-def test_bootstrap_rejects_a_constant_series():
+def test_bootstrap_rejects_a_constant_series_or_a_total_loss_bar():
     with pytest.raises(QuackzInputError, match="constant"):
         checks.bootstrap(np.zeros(100), periods_per_year=PPY, n_resamples=50, seed=0)
+
+    # Every resample is bars of the caller's own series rearranged, never a new value, so a
+    # total loss (a return at or below -1) has to be caught against the series the caller
+    # actually passed, naming that series and the index of the offending bar, before any
+    # resample is built from it. Catching it only once it turns up inside a resample would
+    # blame "a resampled path", which does not exist, for a bar that was in the input all
+    # along, and would give no index at all.
+    rng = np.random.default_rng(3)
+    data = 0.01 * rng.standard_normal(100)
+    data[30] = -1.4
+    with pytest.raises(QuackzInputError, match=r"returns contains a value at or below -1"):
+        checks.bootstrap(data, periods_per_year=PPY, n_resamples=50, seed=0)
+    with pytest.raises(QuackzInputError, match=r"index 30"):
+        checks.bootstrap(data, periods_per_year=PPY, n_resamples=50, seed=0)
+
+    # `True` is an `int` in Python, so an `isinstance(seed, int)` check alone would read
+    # `seed=True` as a seed of 1, silently, rather than refusing it the way a negative seed
+    # already is. (`n_resamples=True` needs no case of its own: its minimum of 2 catches
+    # `int(True) == 1` regardless of whether the bool is refused by name.)
+    clean = bootstrap_returns(n=100)
+    with pytest.raises(QuackzInputError, match="seed"):
+        checks.bootstrap(clean, periods_per_year=PPY, n_resamples=50, seed=True)
 
 
 def test_a_degenerate_resample_does_not_poison_the_batch():

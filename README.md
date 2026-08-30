@@ -374,7 +374,9 @@ evaluate(prices, positions, thresholds={"dsr_warn": 0.99, "cost_break_even_bps_f
 ```
 
 A swapped pair is rejected at construction, because a reversed ladder silently returns PASS
-for everything.
+for everything. So is a probability, profit share or correlation cut-off outside the range
+that quantity can actually take, because that used to crash deep inside a check instead,
+naming a parameter the caller never passed.
 
 ## Design decisions
 
