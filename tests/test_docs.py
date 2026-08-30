@@ -19,6 +19,8 @@ import re
 import shlex
 import subprocess
 import sys
+import tomllib
+from functools import cache
 from pathlib import Path
 from types import ModuleType
 
@@ -27,6 +29,7 @@ import pytest
 from quackz import __version__
 from quackz.checks import DEFAULT_THRESHOLDS
 from quackz.cli import build_parser
+from test_doc_contract import IMPLEMENTATIONS
 
 ROOT = Path(__file__).resolve().parents[1]
 README = (ROOT / "README.md").read_text(encoding="utf-8")
@@ -173,34 +176,92 @@ def test_the_override_example_uses_real_threshold_names():
 # --------------------------------------------------------------------------------------
 
 
-def readme_output_block() -> list[str]:
-    """The demo block from the README, with the shell prompt and the marked cuts removed.
+# A cut in the README block is one line whose text begins with this, which is why the README
+# keeps every cut to a single line. A cut in the middle of the block declares how many rows
+# it stands for; the one at the end declares how many checks follow it and what they say.
+CUT_MARKER = "..."
+ROWS_CUT = re.compile(r"^\.\.\. (\d+) rows? cut here\b")
+TRAILING_CUT = re.compile(r"^\.\.\. (\d+) more checks cut here, all PASS$")
 
-    A cut is one line whose text begins with `...`, which is why the README keeps them to
-    one line each. Everything else in that block claims to be output and is checked as such.
+
+def check_trailing_cut(marker: str, remaining: list[str]) -> None:
+    """The last cut stands for whole checks, so what it claims about them is checkable."""
+    declared = TRAILING_CUT.match(marker)
+    assert declared is not None, (
+        f"this test knows two shapes of cut marker and this is neither: {marker!r}. Teach it "
+        "the new shape rather than leaving the lines behind it unchecked."
+    )
+    verdicts = [line for line in remaining if line.startswith("[")]
+    assert len(verdicts) == int(declared.group(1)), (
+        f"the marker says {declared.group(1)} checks follow it; the run prints {len(verdicts)}"
+    )
+    failing = [line for line in verdicts if not line.startswith("[PASS]")]
+    assert failing == [], (
+        f"the marker says the checks it hides all pass, and these do not: {failing}"
+    )
+
+
+def readme_output_block() -> list[str]:
+    """The demo block from the README, with the shell prompt and blank lines removed.
+
+    The cut markers are KEPT. They are what licenses a gap between the block and the run,
+    so a reader of this list that could not see them would have no way to tell a cut the
+    README declares from a line that quietly went missing. Everything else in that block
+    claims to be output and is checked as such.
     """
     lines = []
     for line in code_blocks(section("What it prints"), "text")[0].splitlines():
-        if line.lstrip().startswith("...") or line.startswith("$ ") or not line.strip():
+        if line.startswith("$ ") or not line.strip():
             continue
         lines.append(line)
     return lines
 
 
 def test_every_line_of_the_readme_block_is_real_output(capsys):
-    """The block says it is a real run, so every line of it has to come out of one.
+    """The block says it is a real run, so every line of it has to come out of one, in order.
 
-    This is the claim the rest of the README rests on. A number nudged by hand, a row
-    dropped without a marker, or a verdict count left behind by a threshold change all fail
-    here rather than in front of a reader.
+    This is the claim the rest of the README rests on, and it used to be checked with `line
+    in printed`. That is a membership test: it caught a number nudged by hand and was blind
+    to a row deleted with no marker and to two rows swapped, so an entire FAIL check could
+    be lifted out of the block and the suite stayed green. What walks the two together now
+    is a cursor, and the only thing allowed to advance it past a printed line is a cut
+    marker, which is precisely what the README promises about its three cuts.
     """
     load_example("overfit_demo").main()
-    printed = capsys.readouterr().out.splitlines()
+    printed = [line for line in capsys.readouterr().out.splitlines() if line.strip()]
 
     quoted = readme_output_block()
     assert len(quoted) > 30, "the README block no longer quotes the demo"
-    for line in quoted:
-        assert line in printed, line
+    cuts = [line for line in quoted if line.lstrip().startswith(CUT_MARKER)]
+    assert len(cuts) == 3, (
+        "the README says the three marked lines are the only places anything was taken "
+        f"out of this block, and it now has {len(cuts)}. A new cut is a new gap this test "
+        "stops watching, so declare it in the prose as well or do not make it."
+    )
+
+    cursor = 0
+    for position, entry in enumerate(quoted):
+        rows = ROWS_CUT.match(entry.lstrip())
+        if rows is not None:
+            # Each marker says how many rows it stands for, so the gap it opens is exactly
+            # that wide. Letting a marker mean "some lines" instead would put the one row
+            # sitting between two of them back out of sight, which is where it was.
+            cursor += int(rows.group(1))
+            continue
+        if entry.lstrip().startswith(CUT_MARKER):
+            assert position == len(quoted) - 1, (
+                f"a cut that declares no row count only makes sense at the end: {entry!r}"
+            )
+            check_trailing_cut(entry.lstrip(), printed[cursor:])
+            cursor = len(printed)
+            continue
+        assert cursor < len(printed), f"the block quotes a line the run never printed: {entry!r}"
+        assert printed[cursor] == entry, (
+            "the block and the run diverge with no cut marked between them.\n"
+            f"  block: {entry!r}\n"
+            f"  run:   {printed[cursor]!r}"
+        )
+        cursor += 1
 
 
 def test_the_overfit_demo_fails_on_selection_and_nothing_else(capsys):
@@ -266,26 +327,60 @@ def test_the_committed_demo_output_still_matches_a_live_run() -> None:
 
 
 def test_the_published_card_carries_the_output_it_claims_to() -> None:
+    """The card shows the run in two parts, and both of them still have to be the run.
+
+    The first screenful sits in the open block and the rest is behind a disclosure, so
+    looking for the whole capture as one string would fail on a card that is perfectly
+    honest. What has to hold is that the blocks put back together are the captured output
+    byte for byte, which is the claim, rather than how the card chooses to fold it.
+    """
     card = (ROOT / "site" / "index.html").read_text(encoding="utf-8")
     demo = (ROOT / "docs" / "evidence" / "demo.txt").read_text(encoding="utf-8")
-    assert _escaped(demo.rstrip()) in card, "the card's terminal block is not the captured output"
+
+    blocks = re.findall(r"<pre[^>]*>(.*?)</pre>", card, re.DOTALL)
+    assert len(blocks) == 2, (
+        f"the card lays the captured run out in {len(blocks)} blocks rather than two. If the "
+        "card legitimately changed shape, follow it here deliberately; the point of the count "
+        "is that the shape cannot change without someone reading this test again."
+    )
+    assert "\n".join(blocks) == _escaped(demo.rstrip()), (
+        "the card's terminal blocks are not the captured output"
+    )
+
+    # The figure is read out of the sentence that carries it rather than looked for in the
+    # page: a card this long contains almost any small number somewhere.
+    summary = re.search(r"<summary>(.*?)</summary>", card, re.DOTALL)
+    assert summary is not None, "the rest of the run is no longer behind a labelled disclosure"
+    declared = re.search(r"([\d,]+)", summary.group(1))
+    assert declared is not None, (
+        f"the disclosure does not say how much it holds: {summary.group(1)!r}"
+    )
+    assert int(declared.group(1).replace(",", "")) == len(blocks[1].splitlines()), (
+        f"the disclosure says {summary.group(1)!r} and hides {len(blocks[1].splitlines())} lines"
+    )
+
     # The card tells a reader that a test fails when the output stops matching. This is that
     # test, and this assertion is what stops that sentence becoming false by deletion.
     assert "a test fails when it" in card
 
 
-def test_the_card_states_numbers_that_are_true_today() -> None:
-    facts = json.loads((ROOT / "docs" / "evidence" / "facts.json").read_text(encoding="utf-8"))
-    result = subprocess.run(
+@cache
+def collected() -> str:
+    """What pytest says it would run, asked once and shared by the two tests that need it."""
+    return subprocess.run(
         [sys.executable, "-m", "pytest", "-o", "addopts=", "--collect-only", "-q"],
         capture_output=True,
         text=True,
         timeout=600,
         check=True,
         cwd=ROOT,
-    )
-    match = re.search(r"^(\d+) tests? collected", result.stdout, re.MULTILINE)
-    assert match is not None, f"no collection total in:\n{result.stdout[-400:]}"
+    ).stdout
+
+
+def test_the_card_states_numbers_that_are_true_today() -> None:
+    facts = json.loads((ROOT / "docs" / "evidence" / "facts.json").read_text(encoding="utf-8"))
+    match = re.search(r"^(\d+) tests? collected", collected(), re.MULTILINE)
+    assert match is not None, f"no collection total in:\n{collected()[-400:]}"
     assert facts["tests"] == int(match.group(1)), "facts.json's test total is stale"
     # Against the package version, never `git describe`: actions/checkout clones without tags,
     # so a git-based assertion tests the shape of the checkout rather than the release.
@@ -328,3 +423,72 @@ def test_the_readme_frame_is_built_from_the_captured_output() -> None:
     # named a test in a sibling repository as covering this tree. It did not exist here.
     assert svg.isascii()
     assert "<script" not in svg, "a README image is served through a proxy that strips script"
+
+
+def test_shipping_py_typed_means_a_type_checker_actually_runs() -> None:
+    """`py.typed` tells a downstream user that these annotations were checked by something.
+
+    Nothing checked them. The shared CI workflow's type step is opt in and defaults to off,
+    so the marker file promised a checked package while no checker ran on any of the four
+    interpreters, and CONTRIBUTING told contributors that typing was a gate here. All three
+    parts are asserted together, because it was the wiring rather than the claim that went
+    missing and any one of them alone leaves the promise unkept.
+    """
+    assert (ROOT / "src" / "quackz" / "py.typed").exists()
+
+    config = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    dev = config["dependency-groups"]["dev"]
+    assert any(requirement.startswith("mypy") for requirement in dev), (
+        f"mypy is not in the dev group, so `uv run mypy` cannot run: {dev}"
+    )
+    # Scoped to src on purpose: src is the whole of what the marker file promises about.
+    assert config["tool"]["mypy"]["files"] == ["src"]
+
+    # Read out of the `with:` block of the job that calls the shared workflow, not searched
+    # for anywhere in the file. The input defaults to false, so an absent key and a key set
+    # to false are the same skipped step, and only the block that carries it can say which.
+    ci = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    inputs = ci.split("\n    with:\n", 1)
+    assert len(inputs) == 2, "the checks job passes no inputs to the shared workflow at all"
+    given = dict(
+        re.findall(r"^      ([a-z-]+): *(.+?)\s*$", inputs[1], re.MULTILINE),
+    )
+    assert given.get("run-mypy") == "true", (
+        f"CI does not enable the shared workflow's type step, so nothing runs mypy: {given}"
+    )
+
+
+# The contract kinds this repository is on the hook for, pinned by name and by count. They
+# are read out of the generated contract file, so a kind quietly disappearing from the shared
+# manifest would otherwise leave the test below checking one thing fewer and still passing.
+CONTRACT_KINDS = {"NUMBER", "COMMAND", "OUTPUT", "REFERENCE"}
+
+
+def test_every_contract_kind_names_a_test_that_pytest_actually_collects() -> None:
+    """The generated contract resolves its names against the raw text of the suite.
+
+    `f"def {name}(" in suite` is a substring search, so a comment, a docstring or any string
+    literal carrying the name satisfies it: a kind can lose its implementation entirely while
+    the contract still reports it implemented. Renaming the OUTPUT test and leaving its old
+    name in a comment above it was enough, and the whole suite stayed green.
+
+    That file is generated from a shared manifest and is rewritten on every publish, so the
+    fix cannot live in it. The resolution it should be doing is done here instead, against
+    the node ids pytest collects, where a comment cannot appear.
+    """
+    assert set(IMPLEMENTATIONS) == CONTRACT_KINDS, (
+        "the contract kinds this repository implements have changed. Update CONTRACT_KINDS "
+        f"deliberately rather than letting this test cover fewer of them: {set(IMPLEMENTATIONS)}"
+    )
+    names = set()
+    for line in collected().splitlines():
+        if "::" in line:
+            names.add(line.split("::", 1)[1].strip().split("[", 1)[0])
+    assert names, "pytest collected nothing, so this test would pass for the wrong reason"
+
+    missing = {kind: name for kind, name in IMPLEMENTATIONS.items() if name not in names}
+    assert missing == {}, (
+        f"these contract kinds name a test that pytest does not collect: {missing}. The name "
+        "may still appear in the tree as a comment or a string, which is what the generated "
+        "contract check would accept and what this one will not."
+    )

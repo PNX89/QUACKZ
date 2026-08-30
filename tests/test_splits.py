@@ -286,3 +286,48 @@ def test_splitters_reject_a_sample_of_one():
     for splitter in (splits.WalkForward(1), splits.EmbargoedKFold(2, embargo_pct=0.0)):
         with pytest.raises(QuackzInputError, match="at least 2 observations"):
             list(splitter.split(1))
+
+
+# The two splitters this module offers, named and counted here so that deleting one leaves
+# the sklearn-convention test covering one case fewer and saying so, rather than passing.
+SPLITTERS = {
+    "WalkForward": splits.WalkForward(3),
+    "EmbargoedKFold": splits.EmbargoedKFold(3, embargo_pct=0.02),
+}
+
+
+def test_both_splitters_are_named_here():
+    assert set(SPLITTERS) == {"WalkForward", "EmbargoedKFold"}
+    assert len(SPLITTERS) == 2
+
+
+@pytest.mark.parametrize("name", sorted(SPLITTERS))
+def test_a_splitter_takes_the_arguments_scikit_learn_actually_calls_it_with(name):
+    """The module's first paragraph says these drop into a pipeline. They did not.
+
+    `cross_validate`, `cross_val_score` and `GridSearchCV` all call a splitter as
+    `split(X, y, groups)` and `get_n_splits(X, y, groups)`. Both methods took one argument,
+    so every one of those raised TypeError on the first call, and no test could see it
+    because the suite only ever called `split(n_obs)` and scikit-learn is not a dependency
+    here. The extra arguments must be accepted and must change nothing: a splitter that cuts
+    a sample by time reads neither labels nor groups.
+    """
+    splitter = SPLITTERS[name]
+    features = np.zeros((60, 2))
+    labels = np.arange(60)
+
+    expected = [(train.tolist(), test.tolist()) for train, test in splitter.split(60)]
+    assert len(expected) == 3
+
+    positional = [
+        (train.tolist(), test.tolist()) for train, test in splitter.split(features, labels, None)
+    ]
+    by_keyword = [
+        (train.tolist(), test.tolist())
+        for train, test in splitter.split(features, y=labels, groups=None)
+    ]
+    assert positional == expected
+    assert by_keyword == expected
+
+    assert splitter.get_n_splits(features, labels, None) == 3
+    assert splitter.get_n_splits(features, y=labels, groups=None) == 3
